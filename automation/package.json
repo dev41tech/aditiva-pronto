@@ -1,0 +1,21 @@
+{
+  "name": "dominio-registro-automation",
+  "version": "1.0.0",
+  "description": "Automação para extração do relatório Relação de Empresas do Domínio Registro",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "node index.js --dry-run"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "winston": "^3.13.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": ["win32"]
+}
