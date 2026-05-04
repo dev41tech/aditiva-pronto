@@ -21,7 +21,7 @@
 
 ## Sincronização de Pasta
 
-- [ ] `POST /api/import/sync` processa todos os `.xlsx` na `EXPORTS_DIR`
+- [ ] `POST /api/import/sync` processa o `.xlsx` mais recente em `IMPORT_FOLDER`
 - [ ] Arquivos já processados não são reprocessados (se implementado)
 
 ---

@@ -132,6 +132,6 @@ aditiva-pronto/
 | `DB_USER` | Usuário do banco | — |
 | `DB_PASS` | Senha do banco | — |
 | `PORT` | Porta do servidor backend | `3001` |
-| `EXPORTS_DIR` | Pasta com exports do Domínio | `./exports` |
+| `IMPORT_FOLDER` | Pasta com relatórios xlsx para sincronização | `./imports` |
 | `GENERATED_DIR` | Pasta de saída dos DOCX | `./generated` |
 | `TEMPLATE_PATH` | Caminho do template .docx | `./templates/termo_aditivo.docx` |

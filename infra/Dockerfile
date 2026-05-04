@@ -36,8 +36,8 @@ COPY --from=backend-builder /build/backend/dist ./dist/backend
 # Frontend build (served as static by Express via process.cwd()/dist/frontend)
 COPY --from=frontend-builder /app/dist/frontend ./dist/frontend
 
-# Template directory (mount at runtime — see docker-compose volumes)
-RUN mkdir -p /app/templates /app/exports /app/generated
+# Criar todas as pastas esperadas (serão sobrescritas pelos volumes montados)
+RUN mkdir -p /app/imports /app/exports /app/generated /app/templates
 
 EXPOSE 3001
 

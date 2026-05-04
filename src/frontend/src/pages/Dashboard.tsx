@@ -56,9 +56,14 @@ export default function Dashboard() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['stats'] });
       qc.invalidateQueries({ queryKey: ['companies'] });
-      alert(`Sincronização: ${data.processed ?? 0} arquivo(s) processado(s).`);
+      const msg =
+        data.message ??
+        `Arquivo: "${data.sourceFile}"\n` +
+        `Inseridas: ${data.inserted} | Atualizadas: ${data.updated} | Ignoradas: ${data.skipped}`;
+      alert(`✅ Sincronização concluída!\n\n${msg}` +
+        (data.errors?.length ? `\n\nAvisos:\n${data.errors.slice(0, 5).join('\n')}` : ''));
     },
-    onError: (e: Error) => alert(`Erro na sincronização: ${e.message}`),
+    onError: (e: Error) => alert(`❌ Erro ao sincronizar:\n\n${e.message}`),
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {

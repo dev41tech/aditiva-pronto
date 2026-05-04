@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import type {
   Company, Complement, GeneratedDocument,
   DashboardStats, ListResponse, PreviewResponse, CompanyStatus,
@@ -10,6 +10,19 @@ const http = axios.create({
     : '/api',
   timeout: 60_000,
 });
+
+// Extrai a mensagem real do JSON de erro da API, em vez de "Request failed with status 500"
+http.interceptors.response.use(
+  (r) => r,
+  (err: AxiosError<{ error?: string; detail?: string }>) => {
+    const apiMessage =
+      err.response?.data?.error ||
+      err.response?.data?.detail ||
+      err.message;
+    const enhanced = new Error(apiMessage);
+    return Promise.reject(enhanced);
+  },
+);
 
 // ── Health ──────────────────────────────────────────────────────
 export const getHealth = () => http.get<{ status: string }>('/health').then(r => r.data);
