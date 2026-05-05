@@ -1,26 +1,42 @@
+import { useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useRef } from 'react';
 import {
-  Buildings, CheckCircle, Clock, File, ArrowRight, Upload, FolderOpen,
+  Buildings, CheckCircle, Clock, Files, ArrowRight,
+  Upload, ArrowsClockwise, FileXls,
 } from '@phosphor-icons/react';
 import { getStats, importFile, syncFromDir } from '../services/api';
+import { useToast } from '../context/ToastContext';
 import type { DashboardStats } from '../types';
 
-function StatCard({
-  icon, label, value, color,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-  color: string;
-}) {
+interface StatCardProps {
+  icon:    React.ReactNode;
+  label:   string;
+  value:   number | string;
+  accent:  string; // bg color classes
+}
+
+function StatCard({ icon, label, value, accent }: StatCardProps) {
   return (
     <div className="card flex items-center gap-4">
-      <div className={`p-3 rounded-lg ${color}`}>{icon}</div>
-      <div>
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
-        <p className="text-sm text-gray-500">{label}</p>
+      <div className={`p-3 rounded-xl shrink-0 ${accent}`}>{icon}</div>
+      <div className="min-w-0">
+        <p className="text-2xl font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
+          {value}
+        </p>
+        <p className="text-sm text-gray-500 dark:text-zinc-400 truncate">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="card flex items-center gap-4 animate-pulse">
+      <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0" />
+      <div className="flex-1 space-y-2">
+        <div className="h-6 w-16 bg-gray-100 dark:bg-zinc-800 rounded" />
+        <div className="h-4 w-28 bg-gray-100 dark:bg-zinc-800 rounded" />
       </div>
     </div>
   );
@@ -28,12 +44,13 @@ function StatCard({
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const qc = useQueryClient();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const qc       = useQueryClient();
+  const fileRef  = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ['stats'],
-    queryFn: getStats,
+    queryFn:  getStats,
   });
 
   const importMut = useMutation({
@@ -41,14 +58,13 @@ export default function Dashboard() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['stats'] });
       qc.invalidateQueries({ queryKey: ['companies'] });
-      alert(
-        `Importação concluída!\n` +
-        `Total: ${data.total} | Inseridas: ${data.inserted} | ` +
-        `Atualizadas: ${data.updated} | Ignoradas: ${data.skipped}` +
-        (data.errors?.length ? `\n\nErros:\n${data.errors.join('\n')}` : ''),
-      );
+      const msg = `Inseridas: ${data.inserted} · Atualizadas: ${data.updated} · Ignoradas: ${data.skipped}`;
+      toast(msg, 'success');
+      if (data.errors?.length) {
+        toast(`${data.errors.length} linha(s) com erro — verifique o arquivo.`, 'error');
+      }
     },
-    onError: (e: Error) => alert(`Erro na importação: ${e.message}`),
+    onError: (e: Error) => toast(`Erro na importação: ${e.message}`, 'error'),
   });
 
   const syncMut = useMutation({
@@ -56,14 +72,13 @@ export default function Dashboard() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['stats'] });
       qc.invalidateQueries({ queryKey: ['companies'] });
-      const msg =
+      toast(
         data.message ??
-        `Arquivo: "${data.sourceFile}"\n` +
-        `Inseridas: ${data.inserted} | Atualizadas: ${data.updated} | Ignoradas: ${data.skipped}`;
-      alert(`✅ Sincronização concluída!\n\n${msg}` +
-        (data.errors?.length ? `\n\nAvisos:\n${data.errors.slice(0, 5).join('\n')}` : ''));
+        `"${data.sourceFile}" · Inseridas: ${data.inserted} · Atualizadas: ${data.updated}`,
+        'success',
+      );
     },
-    onError: (e: Error) => alert(`❌ Erro ao sincronizar:\n\n${e.message}`),
+    onError: (e: Error) => toast(e.message, 'error'),
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -75,16 +90,17 @@ export default function Dashboard() {
   const busy = importMut.isPending || syncMut.isPending;
 
   return (
-    <div className="px-8 py-8 max-w-5xl">
-      <div className="mb-8 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Gestão de Termos Aditivos — 41 Contábil
+    <div className="page-container">
+      {/* ── Header ── */}
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-zinc-100">Dashboard</h1>
+          <p className="text-sm text-gray-500 dark:text-zinc-400 mt-0.5">
+            Gestão de Termos Aditivos · 41 Tech
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           <input
             ref={fileRef}
             type="file"
@@ -92,93 +108,122 @@ export default function Dashboard() {
             className="hidden"
             onChange={handleFileChange}
           />
+
           <button
-            className="btn-ghost flex items-center gap-2"
+            className="btn-outline"
             onClick={() => syncMut.mutate()}
             disabled={busy}
+            title="Importar o xlsx mais recente da pasta configurada no servidor"
           >
-            <FolderOpen size={16} />
-            Sincronizar pasta
+            <ArrowsClockwise
+              size={15}
+              className={syncMut.isPending ? 'animate-spin' : ''}
+            />
+            {syncMut.isPending ? 'Sincronizando…' : 'Sincronizar pasta'}
           </button>
+
           <button
-            className="btn-primary flex items-center gap-2"
+            className="btn-primary"
             onClick={() => fileRef.current?.click()}
             disabled={busy}
           >
-            <Upload size={16} />
+            <Upload size={15} />
             {importMut.isPending ? 'Importando…' : 'Importar planilha'}
           </button>
         </div>
       </div>
 
-      {/* Stats */}
-      {isLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="card h-20 animate-pulse bg-gray-100" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatCard
-            icon={<Buildings size={22} className="text-blue-600" />}
-            label="Total de empresas"
-            value={stats?.totalCompanies ?? 0}
-            color="bg-blue-50"
-          />
-          <StatCard
-            icon={<CheckCircle size={22} className="text-green-600" />}
-            label="Com dados"
-            value={stats?.withData ?? 0}
-            color="bg-green-50"
-          />
-          <StatCard
-            icon={<Clock size={22} className="text-amber-600" />}
-            label="Pendentes"
-            value={stats?.pending ?? 0}
-            color="bg-amber-50"
-          />
-          <StatCard
-            icon={<File size={22} className="text-purple-600" />}
-            label="Documentos gerados"
-            value={stats?.totalDocuments ?? 0}
-            color="bg-purple-50"
-          />
-        </div>
-      )}
+      {/* ── Stat cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {isLoading ? (
+          [...Array(4)].map((_, i) => <SkeletonCard key={i} />)
+        ) : (
+          <>
+            <StatCard
+              icon={<Buildings size={22} className="text-brand-600 dark:text-brand-400" />}
+              label="Total de empresas"
+              value={stats?.totalCompanies ?? 0}
+              accent="bg-brand-50 dark:bg-brand-900/30"
+            />
+            <StatCard
+              icon={<CheckCircle size={22} weight="fill" className="text-green-600 dark:text-green-400" />}
+              label="Com dados"
+              value={stats?.withData ?? 0}
+              accent="bg-green-50 dark:bg-green-900/30"
+            />
+            <StatCard
+              icon={<Clock size={22} weight="fill" className="text-amber-600 dark:text-amber-400" />}
+              label="Pendentes"
+              value={stats?.pending ?? 0}
+              accent="bg-amber-50 dark:bg-amber-900/30"
+            />
+            <StatCard
+              icon={<Files size={22} weight="fill" className="text-purple-600 dark:text-purple-400" />}
+              label="Documentos gerados"
+              value={stats?.totalDocuments ?? 0}
+              accent="bg-purple-50 dark:bg-purple-900/30"
+            />
+          </>
+        )}
+      </div>
 
-      {/* Last file */}
+      {/* ── Última importação ── */}
       {stats?.lastFile && (
-        <div className="card mb-8 flex items-center gap-3 text-sm text-gray-500">
-          <File size={16} className="shrink-0" />
-          <span>Última importação: <span className="font-medium text-gray-700">{stats.lastFile}</span></span>
+        <div className="card mb-6 flex items-center gap-3">
+          <FileXls size={18} weight="duotone" className="text-green-600 dark:text-green-400 shrink-0" />
+          <div className="text-sm">
+            <span className="text-gray-500 dark:text-zinc-400">Última importação: </span>
+            <span className="font-medium text-gray-800 dark:text-zinc-200">{stats.lastFile}</span>
+          </div>
         </div>
       )}
 
-      {/* Quick actions */}
+      {/* ── Ações rápidas ── */}
       <div className="card">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Ações rápidas</h2>
+        <h2 className="section-title">Ações rápidas</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             onClick={() => navigate('/empresas?status=pending')}
-            className="flex items-center justify-between p-4 rounded-lg border border-amber-100 bg-amber-50 hover:bg-amber-100 transition-colors text-left"
+            className="group flex items-center justify-between p-4 rounded-xl
+                       border border-amber-200 dark:border-amber-800/50
+                       bg-amber-50 dark:bg-amber-900/20
+                       hover:bg-amber-100 dark:hover:bg-amber-900/40
+                       transition-colors text-left"
           >
             <div>
-              <p className="font-medium text-amber-900">Empresas pendentes</p>
-              <p className="text-xs text-amber-700 mt-0.5">Preencher dados e gerar termos</p>
+              <p className="font-semibold text-amber-900 dark:text-amber-300 text-sm">
+                Empresas pendentes
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                {stats?.pending ?? '…'} aguardando preenchimento
+              </p>
             </div>
-            <ArrowRight size={18} className="text-amber-600 shrink-0" />
+            <ArrowRight
+              size={18}
+              className="text-amber-500 dark:text-amber-400 shrink-0 group-hover:translate-x-0.5 transition-transform"
+            />
           </button>
 
           <button
             onClick={() => navigate('/empresas?status=ready')}
-            className="flex items-center justify-between p-4 rounded-lg border border-green-100 bg-green-50 hover:bg-green-100 transition-colors text-left"
+            className="group flex items-center justify-between p-4 rounded-xl
+                       border border-green-200 dark:border-green-800/50
+                       bg-green-50 dark:bg-green-900/20
+                       hover:bg-green-100 dark:hover:bg-green-900/40
+                       transition-colors text-left"
           >
             <div>
-              <p className="font-medium text-green-900">Prontos para gerar</p>
-              <p className="text-xs text-green-700 mt-0.5">Todos os campos preenchidos</p>
+              <p className="font-semibold text-green-900 dark:text-green-300 text-sm">
+                Prontos para gerar
+              </p>
+              <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
+                {stats?.withData ?? '…'} com todos os dados preenchidos
+              </p>
             </div>
-            <ArrowRight size={18} className="text-green-600 shrink-0" />
+            <ArrowRight
+              size={18}
+              className="text-green-500 dark:text-green-400 shrink-0 group-hover:translate-x-0.5 transition-transform"
+            />
           </button>
         </div>
       </div>

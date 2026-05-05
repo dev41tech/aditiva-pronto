@@ -3,17 +3,108 @@
 @tailwind utilities;
 
 @layer base {
-  html { @apply text-gray-900 bg-gray-50; }
+  html {
+    @apply text-gray-900 bg-gray-50 dark:bg-zinc-950 dark:text-zinc-100;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
   body { @apply antialiased; }
+  * { @apply transition-colors duration-150; }
+
+  /* Remove transition on load to avoid flash */
+  .no-transition * { transition: none !important; }
 }
 
 @layer components {
-  .card        { @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6; }
-  .btn-primary { @apply bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors; }
-  .btn-ghost   { @apply text-gray-600 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors; }
-  .btn-danger  { @apply bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors; }
-  .input       { @apply w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed; }
-  .label       { @apply block text-sm font-medium text-gray-700 mb-1; }
-  .badge-ready   { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800; }
-  .badge-pending { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800; }
+  /* ── Cards ── */
+  .card {
+    @apply bg-white dark:bg-zinc-900
+           rounded-xl shadow-sm
+           border border-gray-100 dark:border-zinc-800
+           p-6;
+  }
+  .card-hover {
+    @apply card hover:shadow-md hover:border-gray-200 dark:hover:border-zinc-700
+           cursor-pointer transition-shadow;
+  }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    @apply bg-brand-600 text-white
+           px-4 py-2 rounded-lg font-medium text-sm
+           hover:bg-brand-700
+           dark:bg-brand-500 dark:hover:bg-brand-600
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors inline-flex items-center gap-2;
+  }
+  .btn-ghost {
+    @apply text-gray-600 dark:text-zinc-300
+           px-4 py-2 rounded-lg font-medium text-sm
+           hover:bg-gray-100 dark:hover:bg-zinc-800
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors inline-flex items-center gap-2;
+  }
+  .btn-danger {
+    @apply bg-red-600 text-white
+           px-4 py-2 rounded-lg font-medium text-sm
+           hover:bg-red-700
+           transition-colors inline-flex items-center gap-2;
+  }
+  .btn-outline {
+    @apply border border-gray-300 dark:border-zinc-700
+           text-gray-700 dark:text-zinc-200
+           px-4 py-2 rounded-lg font-medium text-sm
+           hover:bg-gray-50 dark:hover:bg-zinc-800
+           transition-colors inline-flex items-center gap-2;
+  }
+
+  /* ── Form ── */
+  .input {
+    @apply w-full rounded-lg
+           border border-gray-300 dark:border-zinc-700
+           bg-white dark:bg-zinc-800
+           text-gray-900 dark:text-zinc-100
+           placeholder:text-gray-400 dark:placeholder:text-zinc-500
+           px-3 py-2 text-sm
+           focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent
+           disabled:bg-gray-100 dark:disabled:bg-zinc-700
+           disabled:text-gray-500 dark:disabled:text-zinc-400
+           disabled:cursor-not-allowed;
+  }
+  .label {
+    @apply block text-sm font-medium
+           text-gray-700 dark:text-zinc-300
+           mb-1;
+  }
+
+  /* ── Badges ── */
+  .badge-ready {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium
+           bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300;
+  }
+  .badge-pending {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium
+           bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300;
+  }
+
+  /* ── Page container ── */
+  .page-container {
+    @apply px-6 py-8 max-w-7xl mx-auto w-full;
+  }
+
+  /* ── Section header ── */
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-wider
+           text-gray-400 dark:text-zinc-500 mb-4;
+  }
+
+  /* ── Table ── */
+  .table-row {
+    @apply border-b border-gray-50 dark:border-zinc-800
+           hover:bg-gray-50 dark:hover:bg-zinc-800/60
+           cursor-pointer transition-colors;
+  }
+  .table-head {
+    @apply px-5 py-3 font-medium text-xs uppercase tracking-wide
+           text-gray-400 dark:text-zinc-500;
+  }
 }

@@ -1,4 +1,4 @@
-import axios, { AxiosError } from 'axios';
+import axios, { type AxiosError } from 'axios';
 import type {
   Company, Complement, GeneratedDocument,
   DashboardStats, ListResponse, PreviewResponse, CompanyStatus,
@@ -11,35 +11,46 @@ const http = axios.create({
   timeout: 60_000,
 });
 
-// Extrai a mensagem real do JSON de erro da API, em vez de "Request failed with status 500"
+// Extrai a mensagem real do JSON de erro, mesmo quando responseType é 'blob'
 http.interceptors.response.use(
   (r) => r,
-  (err: AxiosError<{ error?: string; detail?: string }>) => {
-    const apiMessage =
-      err.response?.data?.error ||
-      err.response?.data?.detail ||
-      err.message;
-    const enhanced = new Error(apiMessage);
-    return Promise.reject(enhanced);
+  async (err: AxiosError) => {
+    const data = err.response?.data;
+
+    // Quando responseType='blob', erros chegam como Blob — precisa ler como texto
+    if (data instanceof Blob && data.type.includes('json')) {
+      try {
+        const text = await data.text();
+        const json = JSON.parse(text) as { error?: string };
+        return Promise.reject(new Error(json.error ?? err.message));
+      } catch {
+        return Promise.reject(new Error(err.message));
+      }
+    }
+
+    const apiError = (data as { error?: string } | undefined)?.error;
+    return Promise.reject(new Error(apiError ?? err.message));
   },
 );
 
 // ── Health ──────────────────────────────────────────────────────
-export const getHealth = () => http.get<{ status: string }>('/health').then(r => r.data);
+export const getHealth = () =>
+  http.get<{ status: string }>('/health').then((r) => r.data);
 
 // ── Dashboard ───────────────────────────────────────────────────
-export const getStats = () => http.get<DashboardStats>('/stats').then(r => r.data);
+export const getStats = () =>
+  http.get<DashboardStats>('/stats').then((r) => r.data);
 
 // ── Import ──────────────────────────────────────────────────────
 export function importFile(file: File) {
   const form = new FormData();
   form.append('file', file);
-  return http.post('/import/companies', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }).then(r => r.data);
+  return http
+    .post('/import/companies', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    .then((r) => r.data);
 }
 
-export const syncFromDir = () => http.post('/import/sync').then(r => r.data);
+export const syncFromDir = () => http.post('/import/sync').then((r) => r.data);
 
 // ── Companies ───────────────────────────────────────────────────
 export function listCompanies(params: {
@@ -48,33 +59,57 @@ export function listCompanies(params: {
   page?:   number;
   limit?:  number;
 }) {
-  return http.get<ListResponse>('/companies', { params }).then(r => r.data);
+  return http.get<ListResponse>('/companies', { params }).then((r) => r.data);
 }
 
 export function getCompany(id: string) {
-  return http.get<{
-    company:    Company;
-    complement: Complement | null;
-    documents:  GeneratedDocument[];
-  }>(`/companies/${id}`).then(r => r.data);
+  return http
+    .get<{ company: Company; complement: Complement | null; documents: GeneratedDocument[] }>(
+      `/companies/${id}`,
+    )
+    .then((r) => r.data);
 }
 
 export function saveComplement(id: string, data: Complement) {
-  return http.put<{ id: string; message: string }>(`/companies/${id}/complement`, data).then(r => r.data);
+  return http
+    .put<{ id: string; message: string }>(`/companies/${id}/complement`, data)
+    .then((r) => r.data);
 }
 
 export function getPreview(id: string) {
-  return http.get<PreviewResponse>(`/companies/${id}/preview`).then(r => r.data);
+  return http.get<PreviewResponse>(`/companies/${id}/preview`).then((r) => r.data);
 }
 
-export function generateDocx(id: string) {
-  return http.post<{ fileName: string; filePath: string; message: string }>(
-    `/companies/${id}/generate-docx`,
-  ).then(r => r.data);
+// Gera o DOCX e retorna o blob + nome do arquivo para download imediato
+export async function generateDocxBlob(id: string): Promise<{ blob: Blob; fileName: string }> {
+  const response = await http.post(`/companies/${id}/generate-docx`, null, {
+    responseType: 'blob',
+  });
+
+  // Extrai nome do arquivo do header Content-Disposition
+  const contentDisp = response.headers['content-disposition'] as string | undefined;
+  const match = contentDisp?.match(/filename="([^"]+)"/);
+  const rawName = match?.[1] ? decodeURIComponent(match[1]) : 'Termo_Aditivo.docx';
+
+  return { blob: response.data as Blob, fileName: rawName };
 }
 
+// Dispara download de um Blob no navegador
+export function triggerBlobDownload(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href      = url;
+  a.download  = fileName;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Documents ───────────────────────────────────────────────────
 export function getDocuments(id: string) {
-  return http.get<GeneratedDocument[]>(`/companies/${id}/documents`).then(r => r.data);
+  return http.get<GeneratedDocument[]>(`/companies/${id}/documents`).then((r) => r.data);
 }
 
 export function downloadUrl(docId: string) {

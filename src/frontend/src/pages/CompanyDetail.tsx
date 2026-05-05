@@ -1,23 +1,28 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Eye, FileDoc, Download } from '@phosphor-icons/react';
-import { getCompany, saveComplement, getPreview, generateDocx, downloadUrl } from '../services/api';
+import { ArrowLeft, Eye, FileDoc, Download, Spinner } from '@phosphor-icons/react';
+import {
+  getCompany, saveComplement, getPreview,
+  generateDocxBlob, triggerBlobDownload, downloadUrl,
+} from '../services/api';
+import { useToast } from '../context/ToastContext';
 import CompanyForm from '../components/CompanyForm';
 import PreviewModal from '../components/PreviewModal';
 import type { Complement } from '../types';
 import { maskCNPJ } from '../utils/validators';
 
 export default function CompanyDetail() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const qc = useQueryClient();
+  const { id }     = useParams<{ id: string }>();
+  const navigate   = useNavigate();
+  const qc         = useQueryClient();
+  const { toast }  = useToast();
   const [showPreview, setShowPreview] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['company', id],
-    queryFn: () => getCompany(id!),
-    enabled: !!id,
+    queryFn:  () => getCompany(id!),
+    enabled:  !!id,
   });
 
   const saveMut = useMutation({
@@ -26,32 +31,36 @@ export default function CompanyDetail() {
       qc.invalidateQueries({ queryKey: ['company', id] });
       qc.invalidateQueries({ queryKey: ['stats'] });
       qc.invalidateQueries({ queryKey: ['companies'] });
+      toast('Dados salvos com sucesso!', 'success');
     },
-    onError: (e: Error) => alert(`Erro ao salvar: ${e.message}`),
+    onError: (e: Error) => toast(`Erro ao salvar: ${e.message}`, 'error'),
   });
 
   const generateMut = useMutation({
-    mutationFn: () => generateDocx(id!),
-    onSuccess: (res) => {
+    mutationFn: () => generateDocxBlob(id!),
+    onSuccess: ({ blob, fileName }) => {
+      // Dispara o download no navegador
+      triggerBlobDownload(blob, fileName);
+      // Atualiza histórico
       qc.invalidateQueries({ queryKey: ['company', id] });
       qc.invalidateQueries({ queryKey: ['stats'] });
-      alert(`Documento gerado: ${res.fileName}`);
+      toast(`Download iniciado: ${fileName}`, 'success');
     },
-    onError: (e: Error) => alert(`Erro ao gerar documento: ${e.message}`),
+    onError: (e: Error) => toast(`Erro ao gerar DOCX: ${e.message}`, 'error'),
   });
 
   const { data: preview, isFetching: loadingPreview } = useQuery({
     queryKey: ['preview', id],
-    queryFn: () => getPreview(id!),
-    enabled: showPreview && !!id,
+    queryFn:  () => getPreview(id!),
+    enabled:  showPreview && !!id,
   });
 
   if (isLoading) {
     return (
-      <div className="px-8 py-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-6 w-48 bg-gray-200 rounded" />
-          <div className="h-64 bg-gray-100 rounded-xl" />
+      <div className="page-container">
+        <div className="animate-pulse space-y-5">
+          <div className="h-6 w-48 bg-gray-200 dark:bg-zinc-800 rounded" />
+          <div className="h-72 bg-gray-100 dark:bg-zinc-800 rounded-xl" />
         </div>
       </div>
     );
@@ -59,8 +68,8 @@ export default function CompanyDetail() {
 
   if (!data) {
     return (
-      <div className="px-8 py-8">
-        <p className="text-gray-500">Empresa não encontrada.</p>
+      <div className="page-container">
+        <p className="text-gray-500 dark:text-zinc-400">Empresa não encontrada.</p>
         <button className="btn-ghost mt-4" onClick={() => navigate('/empresas')}>
           Voltar
         </button>
@@ -69,48 +78,55 @@ export default function CompanyDetail() {
   }
 
   const { company, complement, documents } = data;
+  const generating = generateMut.isPending;
 
   return (
-    <div className="px-8 py-8 max-w-4xl">
-      {/* Header */}
-      <div className="mb-6">
-        <button
-          className="btn-ghost flex items-center gap-1.5 mb-4 -ml-2 text-sm"
-          onClick={() => navigate('/empresas')}
-        >
-          <ArrowLeft size={16} />
-          Voltar
-        </button>
+    <div className="page-container max-w-4xl">
+      {/* ── Voltar ── */}
+      <button
+        className="btn-ghost -ml-2 mb-5 text-sm"
+        onClick={() => navigate('/empresas')}
+      >
+        <ArrowLeft size={15} />
+        Voltar
+      </button>
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{company.razao_social}</h1>
-            <p className="text-sm text-gray-500 mt-1 tabular-nums">{maskCNPJ(company.cnpj)}</p>
-          </div>
+      {/* ── Header da empresa ── */}
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-zinc-100">
+            {company.razao_social}
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1 tabular-nums">
+            {maskCNPJ(company.cnpj)}
+          </p>
+        </div>
 
-          <div className="flex gap-2 shrink-0">
-            <button
-              className="btn-ghost flex items-center gap-2"
-              onClick={() => setShowPreview(true)}
-              disabled={!complement}
-              title={!complement ? 'Preencha os dados obrigatórios primeiro' : undefined}
-            >
-              <Eye size={16} />
-              Pré-visualizar
-            </button>
-            <button
-              className="btn-primary flex items-center gap-2"
-              onClick={() => generateMut.mutate()}
-              disabled={!complement || generateMut.isPending}
-            >
-              <FileDoc size={16} />
-              {generateMut.isPending ? 'Gerando…' : 'Gerar DOCX'}
-            </button>
-          </div>
+        <div className="flex gap-2 shrink-0">
+          <button
+            className="btn-outline"
+            onClick={() => setShowPreview(true)}
+            disabled={!complement}
+            title={!complement ? 'Preencha os dados obrigatórios primeiro' : 'Pré-visualizar texto'}
+          >
+            <Eye size={15} />
+            Pré-visualizar
+          </button>
+
+          <button
+            className="btn-primary"
+            onClick={() => generateMut.mutate()}
+            disabled={!complement || generating}
+          >
+            {generating
+              ? <><Spinner size={15} className="animate-spin" /> Gerando…</>
+              : <><FileDoc size={15} /> Gerar DOCX</>
+            }
+          </button>
         </div>
       </div>
 
-      {/* Form */}
+      {/* ── Formulário ── */}
       <CompanyForm
         company={company}
         defaultValues={complement ?? undefined}
@@ -118,30 +134,33 @@ export default function CompanyDetail() {
         onSave={(vals) => saveMut.mutate(vals)}
       />
 
-      {/* Documents history */}
+      {/* ── Histórico de documentos ── */}
       {documents.length > 0 && (
         <div className="card mt-6">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">
-            Documentos gerados ({documents.length})
+          <h2 className="section-title">
+            Histórico de documentos ({documents.length})
           </h2>
           <div className="space-y-2">
             {documents.map((doc) => (
               <div
                 key={doc.id}
-                className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 text-sm"
+                className="flex items-center justify-between py-2.5 px-3
+                           rounded-lg bg-gray-50 dark:bg-zinc-800 text-sm"
               >
-                <div>
-                  <p className="font-medium text-gray-800">{doc.file_name}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-800 dark:text-zinc-200 truncate">
+                    {doc.file_name}
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-zinc-500 mt-0.5">
                     {new Date(doc.generated_at).toLocaleString('pt-BR')}
                   </p>
                 </div>
                 <a
                   href={downloadUrl(doc.id)}
-                  className="btn-ghost py-1 px-2 flex items-center gap-1 text-xs"
+                  className="btn-ghost py-1 px-2 text-xs ml-3 shrink-0"
                   download
                 >
-                  <Download size={14} />
+                  <Download size={13} />
                   Baixar
                 </a>
               </div>
@@ -150,7 +169,7 @@ export default function CompanyDetail() {
         </div>
       )}
 
-      {/* Preview modal */}
+      {/* ── Modal de pré-visualização ── */}
       {showPreview && (
         <PreviewModal
           data={preview ?? null}
@@ -160,7 +179,7 @@ export default function CompanyDetail() {
             setShowPreview(false);
             generateMut.mutate();
           }}
-          generating={generateMut.isPending}
+          generating={generating}
         />
       )}
     </div>

@@ -1,17 +1,3 @@
-/**
- * Geração de DOCX usando docxtemplater.
- *
- * O template deve ter os seguintes placeholders no corpo do documento:
- *   {texto_contratante}  — bloco completo do texto da CONTRATANTE
- *   {nome_socio}         — nome do sócio (para assinatura no rodapé)
- *   {razao_social}       — razão social (caso usado em outros trechos)
- *   {cnpj}               — CNPJ formatado
- *   {data_extenso}       — data por extenso (ex: "04 de maio de 2026")
- *
- * Para modificar o template .docx, abra-o no Word e substitua o texto
- * do bloco CONTRATANTE por {texto_contratante}, etc.
- */
-
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import fs from 'fs';
@@ -22,12 +8,14 @@ import { saveDocument } from '../repositories/companyRepository';
 import { buildContratanteText } from './textBuilderService';
 
 interface GeneratePayload {
-  company: {
-    id: string;
-    razao_social: string;
-    cnpj: string;
-  };
+  company: { id: string; razao_social: string; cnpj: string };
   complement: Parameters<typeof buildContratanteText>[1];
+}
+
+export interface DocxResult {
+  buffer:   Buffer;
+  filePath: string;
+  fileName: string;
 }
 
 const MONTHS_PT = [
@@ -37,12 +25,14 @@ const MONTHS_PT = [
 
 function dateExtenso(): string {
   const now = new Date();
-  return `${now.getDate().toString().padStart(2,'0')} de ${MONTHS_PT[now.getMonth()]} de ${now.getFullYear()}`;
+  return `${now.getDate().toString().padStart(2, '0')} de ${MONTHS_PT[now.getMonth()]} de ${now.getFullYear()}`;
 }
 
 function getTemplatePath(): string {
+  // TEMPLATE_PATH tem precedência (usado no docker-compose)
+  if (process.env.TEMPLATE_PATH) return process.env.TEMPLATE_PATH;
   const dir  = process.env.TEMPLATE_DIR  || path.join(process.cwd(), 'templates');
-  const file = process.env.TEMPLATE_FILE || 'Template Termo Aditivo.docx';
+  const file = process.env.TEMPLATE_FILE || 'termo_aditivo.docx';
   return path.join(dir, file);
 }
 
@@ -55,13 +45,13 @@ function getOutputDir(): string {
 export async function generateDocx(
   payload: GeneratePayload,
   outputFileName: string,
-): Promise<string> {
+): Promise<DocxResult> {
   const templatePath = getTemplatePath();
 
   if (!fs.existsSync(templatePath)) {
     throw new Error(
-      `Template não encontrado em: "${templatePath}"\n` +
-      `Configure TEMPLATE_DIR e TEMPLATE_FILE no .env`,
+      `Template não encontrado em: "${templatePath}". ` +
+      `Configure TEMPLATE_PATH no .env apontando para o arquivo .docx.`,
     );
   }
 
@@ -90,22 +80,20 @@ export async function generateDocx(
     const e = err as { properties?: { errors?: unknown[] }; message?: string };
     logger.error('[docx] erro ao renderizar template', { error: e.message });
     if (e?.properties?.errors?.length) {
-      const details = JSON.stringify(e.properties.errors);
-      throw new Error(`Erro no template DOCX: ${details}`);
+      throw new Error(`Erro no template DOCX: ${JSON.stringify(e.properties.errors)}`);
     }
     throw err;
   }
 
+  const buf        = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' });
   const outputDir  = getOutputDir();
   const outputPath = path.join(outputDir, outputFileName);
 
-  const buf = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' });
   fs.writeFileSync(outputPath, buf);
+  logger.info(`[docx] gerado: "${outputPath}" (${buf.length} bytes)`);
 
-  logger.info(`[docx] gerado: "${outputPath}"`);
-
-  // Persiste no histórico
+  // Persiste no histórico do banco
   await saveDocument(payload.company.id, outputFileName, outputPath);
 
-  return outputPath;
+  return { buffer: buf, filePath: outputPath, fileName: outputFileName };
 }

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import {
   findAll, findById, findComplement, upsertComplement,
-  getDashboardStats, listDocuments,
+  getDashboardStats, listDocuments, countAll,
 } from '../repositories/companyRepository';
 import { buildContratanteText } from '../services/textBuilderService';
 import { generateDocx } from '../services/docxService';
@@ -12,8 +12,7 @@ import { AppError } from '../middleware/errorHandler';
 // GET /api/stats
 export async function getStats(_req: Request, res: Response, next: NextFunction) {
   try {
-    const stats = await getDashboardStats();
-    res.json(stats);
+    res.json(await getDashboardStats());
   } catch (err) { next(err); }
 }
 
@@ -21,21 +20,17 @@ export async function getStats(_req: Request, res: Response, next: NextFunction)
 export async function listCompanies(req: Request, res: Response, next: NextFunction) {
   try {
     const { search = '', status = 'all', page = '1', limit = '50' } = req.query as Record<string, string>;
-    const pageNum   = Math.max(1, parseInt(page));
-    const limitNum  = Math.min(200, Math.max(1, parseInt(limit)));
-    const offset    = (pageNum - 1) * limitNum;
+    const pageNum  = Math.max(1, parseInt(page));
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit)));
+    const offset   = (pageNum - 1) * limitNum;
+    const st       = status as 'all' | 'pending' | 'ready';
 
     const [companies, total] = await Promise.all([
-      findAll({ search, status: status as 'all' | 'pending' | 'ready', limit: limitNum, offset }),
-      import('../repositories/companyRepository').then(r => r.countAll({ search, status: status as 'all' | 'pending' | 'ready' })),
+      findAll({ search, status: st, limit: limitNum, offset }),
+      countAll({ search, status: st }),
     ]);
 
-    res.json({
-      data:  companies,
-      total,
-      page:  pageNum,
-      pages: Math.ceil(total / limitNum),
-    });
+    res.json({ data: companies, total, page: pageNum, pages: Math.ceil(total / limitNum) });
   } catch (err) { next(err); }
 }
 
@@ -45,8 +40,10 @@ export async function getCompany(req: Request, res: Response, next: NextFunction
     const company = await findById(req.params.id);
     if (!company) throw new AppError(404, 'Empresa não encontrada.');
 
-    const complement = await findComplement(req.params.id);
-    const documents  = await listDocuments(req.params.id);
+    const [complement, documents] = await Promise.all([
+      findComplement(req.params.id),
+      listDocuments(req.params.id),
+    ]);
 
     res.json({ company, complement, documents });
   } catch (err) { next(err); }
@@ -59,12 +56,9 @@ export async function saveComplement(req: Request, res: Response, next: NextFunc
     if (!company) throw new AppError(404, 'Empresa não encontrada.');
 
     const { nome_socio, cpf_socio } = req.body;
-
     if (!nome_socio?.trim()) throw new AppError(400, 'Nome do sócio é obrigatório.');
     if (!cpf_socio?.trim())  throw new AppError(400, 'CPF do sócio é obrigatório.');
     if (!isValidCPF(cpf_socio)) throw new AppError(400, 'CPF do sócio inválido.');
-
-    // Valida CNPJ da empresa (já vem do banco, mas garante formato)
     if (!isValidCNPJ(onlyDigits(company.cnpj))) {
       throw new AppError(400, 'CNPJ da empresa inválido no banco de dados.');
     }
@@ -77,15 +71,14 @@ export async function saveComplement(req: Request, res: Response, next: NextFunc
 // GET /api/companies/:id/preview
 export async function previewCompany(req: Request, res: Response, next: NextFunction) {
   try {
-    const company    = await findById(req.params.id);
+    const company = await findById(req.params.id);
     if (!company) throw new AppError(404, 'Empresa não encontrada.');
 
     const complement = await findComplement(req.params.id);
     if (!complement) throw new AppError(422, 'Dados complementares não preenchidos. Preencha e salve primeiro.');
 
-    const texto = buildContratanteText(company, complement);
     res.json({
-      texto_contratante: texto,
+      texto_contratante: buildContratanteText(company, complement),
       nome_socio:        complement.nome_socio,
       razao_social:      company.razao_social,
       cnpj:              company.cnpj,
@@ -94,9 +87,10 @@ export async function previewCompany(req: Request, res: Response, next: NextFunc
 }
 
 // POST /api/companies/:id/generate-docx
+// Gera o DOCX, salva em disco, registra no banco e retorna o arquivo para download imediato.
 export async function generateDocument(req: Request, res: Response, next: NextFunction) {
   try {
-    const company    = await findById(req.params.id);
+    const company = await findById(req.params.id);
     if (!company) throw new AppError(404, 'Empresa não encontrada.');
 
     const complement = await findComplement(req.params.id);
@@ -106,16 +100,22 @@ export async function generateDocument(req: Request, res: Response, next: NextFu
     }
 
     const fileName = safeFileName(company.razao_social, company.cnpj);
-    const filePath = await generateDocx({ company, complement }, fileName);
+    const { buffer } = await generateDocx({ company, complement }, fileName);
 
-    res.json({ fileName, filePath, message: 'Documento gerado com sucesso.' });
+    res.set({
+      'Content-Type':        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(fileName)}"`,
+      'Content-Length':      String(buffer.length),
+      // Impede que o interceptor de erro do axios tente parsear o blob como JSON
+      'X-Document-Name':     fileName,
+    });
+    res.send(buffer);
   } catch (err) { next(err); }
 }
 
 // GET /api/companies/:id/documents
 export async function getDocuments(req: Request, res: Response, next: NextFunction) {
   try {
-    const documents = await listDocuments(req.params.id);
-    res.json(documents);
+    res.json(await listDocuments(req.params.id));
   } catch (err) { next(err); }
 }
