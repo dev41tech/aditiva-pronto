@@ -13,18 +13,41 @@ export default function Layout() {
         : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-zinc-100'
     }`;
 
+  /*
+    Estratégia de logo dinâmica:
+    - Tema escuro: tenta /logo-white.png → fallback para /favicon.png com filtro CSS
+    - Tema claro:  tenta /logo-blue.png  → fallback para /favicon.png (normal)
+    Se os arquivos logo-white.png / logo-blue.png não existirem, o onError cai
+    para favicon.png. Em tema escuro, aplica brightness-0 + invert para
+    transformar qualquer logo colorida em branca.
+  */
+  const logoSrc    = theme === 'dark' ? '/logo-white.png' : '/logo-blue.png';
+  const logoClass  = theme === 'dark'
+    ? 'h-7 w-7 object-contain dark-logo-filter'
+    : 'h-7 w-7 object-contain';
+
+  const handleLogoError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.target as HTMLImageElement;
+    if (!img.src.includes('favicon.png')) {
+      img.src = '/favicon.png';
+      // Se estiver em tema escuro e caiu no fallback, aplica filtro CSS
+      if (theme === 'dark') {
+        img.style.filter = 'brightness(0) invert(1)';
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-zinc-950">
 
       {/* ── Top Header ────────────────────────────────────────────── */}
       <header className="h-14 shrink-0 bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 flex items-center px-5 gap-4 z-10">
-        {/* Logo + nome */}
         <div className="flex items-center gap-3">
           <img
-            src="/favicon.png"
+            src={logoSrc}
             alt="41 Tech"
-            className="h-7 w-7 object-contain"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            className={logoClass}
+            onError={handleLogoError}
           />
           <div className="leading-none">
             <span className="font-bold text-gray-900 dark:text-zinc-100 text-base tracking-tight">

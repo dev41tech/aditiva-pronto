@@ -248,23 +248,33 @@ export async function listDocuments(companyId: string) {
 
 export async function getDashboardStats() {
   const db = getPool();
+
   const [totals] = await db.query<RowDataPacket[]>(`
     SELECT
       COUNT(*)                                                       AS total,
       SUM(CASE WHEN cc.id IS NOT NULL THEN 1 ELSE 0 END)            AS with_data,
       SUM(CASE WHEN cc.id IS NULL     THEN 1 ELSE 0 END)            AS pending,
-      (SELECT source_file FROM companies ORDER BY created_at DESC LIMIT 1) AS last_file
+      (SELECT source_file FROM companies ORDER BY updated_at DESC LIMIT 1) AS last_file,
+      (SELECT MAX(updated_at) FROM companies)                        AS last_sync
     FROM companies c
     LEFT JOIN company_complements cc ON cc.company_id = c.id
   `);
-  const [docs] = await db.query<RowDataPacket[]>(
-    `SELECT COUNT(*) AS total FROM generated_documents`,
-  );
+
+  const [docs] = await db.query<RowDataPacket[]>(`
+    SELECT
+      COUNT(*)                                                             AS total,
+      SUM(CASE WHEN generated_at >= DATE_FORMAT(NOW(), '%Y-%m-01')
+               THEN 1 ELSE 0 END)                                         AS this_month
+    FROM generated_documents
+  `);
+
   return {
-    totalCompanies:  totals[0]?.total    ?? 0,
-    withData:        totals[0]?.with_data ?? 0,
-    pending:         totals[0]?.pending   ?? 0,
-    lastFile:        totals[0]?.last_file ?? null,
-    totalDocuments:  docs[0]?.total       ?? 0,
+    totalCompanies: totals[0]?.total    ?? 0,
+    withData:       totals[0]?.with_data ?? 0,
+    pending:        totals[0]?.pending   ?? 0,
+    lastFile:       totals[0]?.last_file ?? null,
+    lastSync:       totals[0]?.last_sync ?? null,  // timestamp ISO string | null
+    totalDocuments: docs[0]?.total       ?? 0,
+    docsThisMonth:  docs[0]?.this_month  ?? 0,
   };
 }

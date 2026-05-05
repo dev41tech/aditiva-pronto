@@ -3,12 +3,12 @@ import Docxtemplater from 'docxtemplater';
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger';
-import { formatCNPJ, formatCPF } from '../utils/formatters';
+import { formatCNPJ, formatCPF, formatDatePtBr } from '../utils/formatters';
 import { saveDocument } from '../repositories/companyRepository';
 import { buildContratanteText } from './textBuilderService';
 
 interface GeneratePayload {
-  company: { id: string; razao_social: string; cnpj: string };
+  company:    { id: string; razao_social: string; cnpj: string };
   complement: Parameters<typeof buildContratanteText>[1];
 }
 
@@ -18,15 +18,13 @@ export interface DocxResult {
   fileName: string;
 }
 
-const MONTHS_PT = [
-  'janeiro','fevereiro','março','abril','maio','junho',
-  'julho','agosto','setembro','outubro','novembro','dezembro',
-];
+// ── Configuração do Contador ──────────────────────────────────────────
+// Pode ser sobrescrito via variáveis de ambiente no docker-compose
+const CONTADOR_NAME = process.env.CONTADOR_NAME || 'OSVALDO MASSAHARU MAEOKA JUNIOR';
+const CONTADOR_ROLE = process.env.CONTADOR_ROLE || 'Contador';
+const CIDADE_DOC   = process.env.CIDADE_DOC    || 'Curitiba';
 
-function dateExtenso(): string {
-  const now = new Date();
-  return `${now.getDate().toString().padStart(2, '0')} de ${MONTHS_PT[now.getMonth()]} de ${now.getFullYear()}`;
-}
+// ── Helpers de path ──────────────────────────────────────────────────
 
 function getTemplatePath(): string {
   if (process.env.TEMPLATE_PATH) return process.env.TEMPLATE_PATH;
@@ -45,8 +43,7 @@ function getOutputDir(): string {
 
 function extractParaText(paraXml: string): string {
   return [...paraXml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)]
-    .map(m => m[1])
-    .join('');
+    .map(m => m[1]).join('');
 }
 
 function xmlEscape(s: string): string {
@@ -57,6 +54,7 @@ function xmlEscape(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Reconstrói um parágrafo preservando pPr e rPr do primeiro run, substituindo o texto. */
 function rebuildPara(originalXml: string, newText: string): string {
   const pPr = originalXml.match(/<w:pPr>[\s\S]*?<\/w:pPr>/)?.[0] ?? '';
   const rPr = originalXml.match(/<w:rPr>[\s\S]*?<\/w:rPr>/)?.[0] ?? '';
@@ -64,13 +62,12 @@ function rebuildPara(originalXml: string, newText: string): string {
 }
 
 /**
- * Replace literal placeholder strings within each paragraph.
- * Handles text split across multiple <w:r> runs by working on extracted text,
- * then rebuilding the paragraph preserving paragraph/run properties.
+ * Substitui texto dentro de cada parágrafo do documento.
+ * Suporta string literal e RegExp como padrão de busca.
  */
 function applyParagraphReplacements(
   docXml: string,
-  replacements: Array<[string, string]>,
+  replacements: Array<[string | RegExp, string]>,
 ): { xml: string; count: number } {
   let count = 0;
 
@@ -82,9 +79,19 @@ function applyParagraphReplacements(
     let changed = false;
 
     for (const [from, to] of replacements) {
-      if (newText.includes(from)) {
-        newText = newText.split(from).join(to);
-        changed = true;
+      if (typeof from === 'string') {
+        if (newText.includes(from)) {
+          newText = newText.split(from).join(to);
+          changed = true;
+        }
+      } else {
+        // reset lastIndex para evitar bugs com flags 'g'
+        from.lastIndex = 0;
+        if (from.test(newText)) {
+          from.lastIndex = 0;
+          newText = newText.replace(from, to);
+          changed = true;
+        }
       }
     }
 
@@ -99,15 +106,13 @@ function applyParagraphReplacements(
 }
 
 /**
- * Find the CONTRATANTE description block (paragraphs between the "CONTRATANTE:"
- * label and the next section marker) and replace with generated text.
- * Returns the modified XML and whether a replacement was made.
+ * Encontra o bloco CONTRATANTE (parágrafos entre "CONTRATANTE:" e a próxima seção)
+ * e substitui pelo texto gerado dinamicamente.
  */
 function replaceContratanteBlock(
   docXml: string,
   contratanteText: string,
 ): { xml: string; found: boolean } {
-  // Collect all paragraph positions
   const paraRegex = /<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g;
   const paras: Array<{ xml: string; text: string; start: number; end: number }> = [];
 
@@ -119,7 +124,6 @@ function replaceContratanteBlock(
   const contratanteIdx = paras.findIndex(p => /CONTRATANTE\s*:/i.test(p.text));
   if (contratanteIdx === -1) return { xml: docXml, found: false };
 
-  // Next major section heading after CONTRATANTE
   const nextSectionIdx = paras.findIndex((p, i) => {
     if (i <= contratanteIdx) return false;
     const t = p.text.trim();
@@ -130,30 +134,120 @@ function replaceContratanteBlock(
   const contratantePara = paras[contratanteIdx];
   const isLabelOnly = /^CONTRATANTE\s*:?\s*$/.test(contratantePara.text.trim());
 
-  let insertStart: number;
-  let insertEnd: number;
+  const insertStart = isLabelOnly ? contratantePara.end : contratantePara.start;
+  const insertEnd   = paras[nextSectionIdx].start;
 
-  if (isLabelOnly) {
-    // Label on its own line — replace paragraphs after it
-    insertStart = contratantePara.end;
-    insertEnd   = paras[nextSectionIdx].start;
-  } else {
-    // Label and text in same paragraph — replace from this para up to next section
-    insertStart = contratantePara.start;
-    insertEnd   = paras[nextSectionIdx].start;
-  }
-
-  // Use the formatting of the first body paragraph (first para after label, or label itself)
   const refParaXml = isLabelOnly
     ? (paras[contratanteIdx + 1]?.xml ?? contratantePara.xml)
     : contratantePara.xml;
 
   const newParaXml = rebuildPara(refParaXml, contratanteText);
-  const result = docXml.slice(0, insertStart) + newParaXml + docXml.slice(insertEnd);
-  return { xml: result, found: true };
+  return { xml: docXml.slice(0, insertStart) + newParaXml + docXml.slice(insertEnd), found: true };
 }
 
-// ── Main export ──────────────────────────────────────────────────────
+/**
+ * Gera o XML de uma tabela de assinatura de duas colunas sem bordas.
+ * Coluna esquerda: sócio (left-aligned)
+ * Coluna direita:  contador (right-aligned)
+ */
+function buildSignatureTableXml(socioName: string): string {
+  const half = 4819; // metade de 9638 twips (largura de conteúdo A4 com margem 1")
+  const esc  = xmlEscape;
+
+  const tcPr = (w: number) =>
+    `<w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>` +
+    `<w:tcBorders>` +
+    `<w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `<w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `<w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `</w:tcBorders></w:tcPr>`;
+
+  return (
+    `<w:tbl>` +
+    `<w:tblPr>` +
+    `<w:tblW w:w="${half * 2}" w:type="dxa"/>` +
+    `<w:tblBorders>` +
+    `<w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `<w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `<w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `<w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `<w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/>` +
+    `</w:tblBorders>` +
+    `<w:tblLayout w:type="fixed"/>` +
+    `</w:tblPr>` +
+    `<w:tblGrid><w:gridCol w:w="${half}"/><w:gridCol w:w="${half}"/></w:tblGrid>` +
+    // Linha 1: nomes (negrito)
+    `<w:tr>` +
+    `<w:tc>${tcPr(half)}<w:p><w:pPr><w:jc w:val="left"/></w:pPr>` +
+    `<w:r><w:rPr><w:b/></w:rPr><w:t>${esc(socioName.toUpperCase())}</w:t></w:r></w:p></w:tc>` +
+    `<w:tc>${tcPr(half)}<w:p><w:pPr><w:jc w:val="right"/></w:pPr>` +
+    `<w:r><w:rPr><w:b/></w:rPr><w:t>${esc(CONTADOR_NAME)}</w:t></w:r></w:p></w:tc>` +
+    `</w:tr>` +
+    // Linha 2: cargos
+    `<w:tr>` +
+    `<w:tc>${tcPr(half)}<w:p><w:pPr><w:jc w:val="left"/></w:pPr>` +
+    `<w:r><w:t>Sócio Administrador</w:t></w:r></w:p></w:tc>` +
+    `<w:tc>${tcPr(half)}<w:p><w:pPr><w:jc w:val="right"/></w:pPr>` +
+    `<w:r><w:t>${esc(CONTADOR_ROLE)}</w:t></w:r></w:p></w:tc>` +
+    `</w:tr>` +
+    `</w:tbl>`
+  );
+}
+
+/**
+ * Tenta substituir a seção de assinatura do documento por uma tabela de duas colunas.
+ * Tenta primeiro tabelas existentes, depois parágrafos.
+ */
+function replaceSignatureSection(
+  docXml: string,
+  socioName: string,
+): { xml: string; found: boolean } {
+  const tableXml = buildSignatureTableXml(socioName);
+
+  // 1. Tenta substituir tabela já existente que contenha "Sócio Administrador"
+  let found = false;
+  const afterTable = docXml.replace(/<w:tbl>[\s\S]*?<\/w:tbl>/g, (tbl) => {
+    const text = [...tbl.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)]
+      .map(m => m[1]).join(' ');
+    if (/S[oó]cio\s+Administrador/i.test(text) || /Nome\s+S[oó]cio/i.test(text)) {
+      found = true;
+      return tableXml;
+    }
+    return tbl;
+  });
+
+  if (found) {
+    logger.info('[docx] tabela de assinatura substituída (modo tabela)');
+    return { xml: afterTable, found: true };
+  }
+
+  // 2. Tenta substituir parágrafos com "Sócio Administrador" + "Contador"
+  const paraRegex = /<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g;
+  const paras: Array<{ xml: string; text: string; start: number; end: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = paraRegex.exec(docXml)) !== null) {
+    paras.push({ xml: m[0], text: extractParaText(m[0]), start: m.index, end: m.index + m[0].length });
+  }
+
+  const socioRoleIdx = paras.findIndex(p => /S[oó]cio\s+Administrador/i.test(p.text));
+  const contRoleIdx  = paras.findIndex(p => new RegExp(CONTADOR_ROLE, 'i').test(p.text));
+
+  if (socioRoleIdx !== -1 && contRoleIdx !== -1) {
+    const nameIdx     = Math.max(0, socioRoleIdx - 1);
+    const minParaIdx  = Math.min(nameIdx, Math.max(0, contRoleIdx - 1));
+    const maxParaIdx  = Math.max(socioRoleIdx, contRoleIdx);
+    const insertStart = paras[minParaIdx].start;
+    const insertEnd   = paras[maxParaIdx].end;
+    logger.info('[docx] tabela de assinatura inserida (modo parágrafos)');
+    return { xml: docXml.slice(0, insertStart) + tableXml + docXml.slice(insertEnd), found: true };
+  }
+
+  return { xml: docXml, found: false };
+}
+
+// ── Geração principal ─────────────────────────────────────────────────
 
 export async function generateDocx(
   payload: GeneratePayload,
@@ -171,21 +265,22 @@ export async function generateDocx(
   const templateBuffer = fs.readFileSync(templatePath);
   const zip = new PizZip(templateBuffer);
 
-  // Read the main document XML to decide which strategy to use
   const docXmlRaw: string = zip.files['word/document.xml']?.asText() ?? '';
-  const hasDocxtemplaterTags = /\{[a-z_]+\}/i.test(docXmlRaw);
+  if (!docXmlRaw) throw new Error('O arquivo .docx não contém word/document.xml válido.');
 
-  logger.info(`[docx] modo: ${hasDocxtemplaterTags ? 'docxtemplater' : 'substituição XML'}`);
+  const hasDocxtemplaterTags = /\{[a-z_]+\}/i.test(docXmlRaw);
+  logger.info(`[docx] modo: ${hasDocxtemplaterTags ? 'docxtemplater' : 'substituição XML direta'}`);
 
   const textoContratante = buildContratanteText(payload.company, payload.complement);
   const cnpjFormatted    = formatCNPJ(payload.company.cnpj);
   const cpfFormatted     = formatCPF(payload.complement.cpf_socio ?? '');
-  const dataExtenso      = dateExtenso();
+  const dataExtenso      = formatDatePtBr(); // sempre data de hoje, fuso SP
+  const socioUpperCase   = (payload.complement.nome_socio ?? '').toUpperCase();
 
   let buf: Buffer;
 
   if (hasDocxtemplaterTags) {
-    // ── Modo 1: docxtemplater ────────────────────────────────────────
+    // ── Modo 1: docxtemplater ──────────────────────────────────────
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks:    true,
@@ -194,11 +289,12 @@ export async function generateDocx(
 
     doc.setData({
       texto_contratante: textoContratante,
-      nome_socio:        payload.complement.nome_socio,
+      nome_socio:        socioUpperCase,            // CAIXA ALTA na assinatura
       razao_social:      payload.company.razao_social,
       cnpj:              cnpjFormatted,
       cpf:               cpfFormatted,
       data_extenso:      dataExtenso,
+      cidade:            CIDADE_DOC,
     });
 
     try {
@@ -215,10 +311,10 @@ export async function generateDocx(
     buf = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' });
 
   } else {
-    // ── Modo 2: substituição XML direta ──────────────────────────────
+    // ── Modo 2: substituição XML direta ───────────────────────────
     let docXml = docXmlRaw;
 
-    // Tenta substituir o bloco CONTRATANTE inteiro
+    // 1. Substitui bloco CONTRATANTE inteiro pelo texto dinâmico
     const blockResult = replaceContratanteBlock(docXml, textoContratante);
     if (blockResult.found) {
       logger.info('[docx] bloco CONTRATANTE substituído');
@@ -227,42 +323,54 @@ export async function generateDocx(
       logger.warn('[docx] marcador CONTRATANTE: não encontrado — usando substituições pontuais');
     }
 
-    // Substituições ponto-a-ponto para campos que aparecem fora do bloco
-    const replacements: Array<[string, string]> = [
-      ['Razão Social',         payload.company.razao_social],
-      ['XX.XXX.XXX/XXXX-XX',  cnpjFormatted],
-      ['Nome Sócio',           payload.complement.nome_socio ?? ''],
-      ['XXX.XXX.XXX-XX',       cpfFormatted],
-      ['DD de mês de AAAA',    dataExtenso],
-    ];
+    // 2. Substitui campos pontuais (campos que ficam fora do bloco contratante,
+    //    ex: assinatura, cabeçalho, data)
+    const dateRegex = new RegExp(
+      `${CIDADE_DOC},\\s+\\d+\\s+de\\s+\\w+\\s+de\\s+\\d{4}\\.`, 'gi',
+    );
 
-    const { xml: xmlAfterFields, count } = applyParagraphReplacements(docXml, replacements);
+    const { xml: xmlAfterFields, count } = applyParagraphReplacements(docXml, [
+      // Campos literais de placeholder
+      ['Razão Social',          payload.company.razao_social],
+      ['XX.XXX.XXX/XXXX-XX',   cnpjFormatted],
+      ['Nome Sócio',            socioUpperCase],       // CAIXA ALTA
+      ['XXX.XXX.XXX-XX',        cpfFormatted],
+      ['DD de mês de AAAA',     dataExtenso],
+      // Data fixa no formato "Curitiba, DD de mês de AAAA." → data de hoje
+      [dateRegex, `${CIDADE_DOC}, ${dataExtenso}.`],
+    ]);
     docXml = xmlAfterFields;
-    logger.info(`[docx] ${count} parágrafo(s) substituído(s) por campos literais`);
+    logger.info(`[docx] ${count} parágrafo(s) com substituições pontuais`);
 
-    if (!blockResult.found && count === 0) {
-      logger.warn('[docx] nenhuma substituição foi aplicada — verifique os placeholders do template');
+    // 3. Substitui ou cria tabela de assinatura de duas colunas
+    const sigResult = replaceSignatureSection(docXml, payload.complement.nome_socio ?? '');
+    if (sigResult.found) {
+      docXml = sigResult.xml;
+    } else {
+      logger.warn('[docx] seção de assinatura não encontrada no template — mantenha "Sócio Administrador" no template');
     }
 
-    // Grava o XML modificado de volta no ZIP
+    if (!blockResult.found && count === 0 && !sigResult.found) {
+      logger.warn('[docx] nenhuma substituição aplicada — verifique os placeholders do template');
+    }
+
+    // Escreve XML modificado de volta no ZIP
     zip.file('word/document.xml', docXml);
     buf = zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
   }
 
-  // Valida que o buffer difere do template original
+  // Diagnóstico: buffer idêntico ao template?
   if (buf.equals(templateBuffer)) {
-    logger.warn('[docx] buffer gerado é idêntico ao template — nenhuma substituição ocorreu');
+    logger.warn('[docx] buffer idêntico ao template — nenhuma substituição detectada');
   } else {
-    logger.info(`[docx] buffer gerado com sucesso (${buf.length} bytes, diff do template: ${buf.length - templateBuffer.length} bytes)`);
+    logger.info(`[docx] gerado com sucesso (${buf.length} bytes)`);
   }
 
   const outputDir  = getOutputDir();
   const outputPath = path.join(outputDir, outputFileName);
-
   fs.writeFileSync(outputPath, buf);
-  logger.info(`[docx] salvo em: "${outputPath}"`);
+  logger.info(`[docx] salvo: "${outputPath}"`);
 
   await saveDocument(payload.company.id, outputFileName, outputPath);
-
   return { buffer: buf, filePath: outputPath, fileName: outputFileName };
 }

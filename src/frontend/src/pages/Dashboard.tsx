@@ -1,22 +1,24 @@
-import { useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
-  Buildings, CheckCircle, Clock, Files, ArrowRight,
-  Upload, ArrowsClockwise, FileXls,
+  Buildings, CheckCircle, Clock, Files,
+  ArrowRight, ArrowsClockwise, FileXls, CalendarBlank,
 } from '@phosphor-icons/react';
-import { getStats, importFile, syncFromDir } from '../services/api';
+import { getStats, syncFromDir } from '../services/api';
 import { useToast } from '../context/ToastContext';
 import type { DashboardStats } from '../types';
+
+// ── Sub-componentes ──────────────────────────────────────────────────
 
 interface StatCardProps {
   icon:    React.ReactNode;
   label:   string;
   value:   number | string;
-  accent:  string; // bg color classes
+  accent:  string;
+  sub?:    string;
 }
 
-function StatCard({ icon, label, value, accent }: StatCardProps) {
+function StatCard({ icon, label, value, accent, sub }: StatCardProps) {
   return (
     <div className="card flex items-center gap-4">
       <div className={`p-3 rounded-xl shrink-0 ${accent}`}>{icon}</div>
@@ -25,6 +27,9 @@ function StatCard({ icon, label, value, accent }: StatCardProps) {
           {value}
         </p>
         <p className="text-sm text-gray-500 dark:text-zinc-400 truncate">{label}</p>
+        {sub && (
+          <p className="text-xs text-gray-400 dark:text-zinc-500 mt-0.5">{sub}</p>
+        )}
       </div>
     </div>
   );
@@ -42,29 +47,33 @@ function SkeletonCard() {
   );
 }
 
+function formatRelative(isoStr: string | null): string {
+  if (!isoStr) return 'nunca';
+  try {
+    const diff = Date.now() - new Date(isoStr).getTime();
+    const min  = Math.floor(diff / 60_000);
+    if (min < 1)   return 'agora mesmo';
+    if (min < 60)  return `há ${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24)    return `há ${h}h`;
+    const d = Math.floor(h / 24);
+    return `há ${d} dia${d !== 1 ? 's' : ''}`;
+  } catch {
+    return isoStr;
+  }
+}
+
+// ── Página principal ─────────────────────────────────────────────────
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const qc       = useQueryClient();
-  const fileRef  = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ['stats'],
     queryFn:  getStats,
-  });
-
-  const importMut = useMutation({
-    mutationFn: importFile,
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['stats'] });
-      qc.invalidateQueries({ queryKey: ['companies'] });
-      const msg = `Inseridas: ${data.inserted} · Atualizadas: ${data.updated} · Ignoradas: ${data.skipped}`;
-      toast(msg, 'success');
-      if (data.errors?.length) {
-        toast(`${data.errors.length} linha(s) com erro — verifique o arquivo.`, 'error');
-      }
-    },
-    onError: (e: Error) => toast(`Erro na importação: ${e.message}`, 'error'),
+    refetchInterval: 60_000, // atualiza a cada minuto
   });
 
   const syncMut = useMutation({
@@ -81,60 +90,35 @@ export default function Dashboard() {
     onError: (e: Error) => toast(e.message, 'error'),
   });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) importMut.mutate(file);
-    e.target.value = '';
-  };
-
-  const busy = importMut.isPending || syncMut.isPending;
-
   return (
     <div className="page-container">
+
       {/* ── Header ── */}
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-center gap-4">
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-start gap-4">
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-zinc-100">Dashboard</h1>
           <p className="text-sm text-gray-500 dark:text-zinc-400 mt-0.5">
-            Gestão de Termos Aditivos · 41 Tech
+            Os arquivos são recebidos automaticamente na pasta configurada.
+            Clique em <strong className="font-medium text-gray-700 dark:text-zinc-300">Sincronizar pasta</strong> para atualizar a base.
           </p>
         </div>
 
-        <div className="flex gap-2 shrink-0">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            className="hidden"
-            onChange={handleFileChange}
+        <button
+          className="btn-outline shrink-0"
+          onClick={() => syncMut.mutate()}
+          disabled={syncMut.isPending}
+          title="Importa o arquivo XLSX mais recente da pasta configurada no servidor"
+        >
+          <ArrowsClockwise
+            size={15}
+            className={syncMut.isPending ? 'animate-spin' : ''}
           />
-
-          <button
-            className="btn-outline"
-            onClick={() => syncMut.mutate()}
-            disabled={busy}
-            title="Importar o xlsx mais recente da pasta configurada no servidor"
-          >
-            <ArrowsClockwise
-              size={15}
-              className={syncMut.isPending ? 'animate-spin' : ''}
-            />
-            {syncMut.isPending ? 'Sincronizando…' : 'Sincronizar pasta'}
-          </button>
-
-          <button
-            className="btn-primary"
-            onClick={() => fileRef.current?.click()}
-            disabled={busy}
-          >
-            <Upload size={15} />
-            {importMut.isPending ? 'Importando…' : 'Importar planilha'}
-          </button>
-        </div>
+          {syncMut.isPending ? 'Sincronizando…' : 'Sincronizar pasta'}
+        </button>
       </div>
 
-      {/* ── Stat cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {/* ── Stat cards — linha 1 ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {isLoading ? (
           [...Array(4)].map((_, i) => <SkeletonCard key={i} />)
         ) : (
@@ -147,36 +131,56 @@ export default function Dashboard() {
             />
             <StatCard
               icon={<CheckCircle size={22} weight="fill" className="text-green-600 dark:text-green-400" />}
-              label="Com dados"
+              label="Prontas para gerar"
               value={stats?.withData ?? 0}
               accent="bg-green-50 dark:bg-green-900/30"
+              sub="com Nome Sócio e CPF"
             />
             <StatCard
               icon={<Clock size={22} weight="fill" className="text-amber-600 dark:text-amber-400" />}
               label="Pendentes"
               value={stats?.pending ?? 0}
               accent="bg-amber-50 dark:bg-amber-900/30"
+              sub="aguardando preenchimento"
             />
             <StatCard
               icon={<Files size={22} weight="fill" className="text-purple-600 dark:text-purple-400" />}
               label="Documentos gerados"
               value={stats?.totalDocuments ?? 0}
               accent="bg-purple-50 dark:bg-purple-900/30"
+              sub={`${stats?.docsThisMonth ?? 0} este mês`}
             />
           </>
         )}
       </div>
 
-      {/* ── Última importação ── */}
-      {stats?.lastFile && (
-        <div className="card mb-6 flex items-center gap-3">
-          <FileXls size={18} weight="duotone" className="text-green-600 dark:text-green-400 shrink-0" />
-          <div className="text-sm">
-            <span className="text-gray-500 dark:text-zinc-400">Última importação: </span>
-            <span className="font-medium text-gray-800 dark:text-zinc-200">{stats.lastFile}</span>
-          </div>
-        </div>
-      )}
+      {/* ── Stat cards — linha 2 (info de sincronização) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+        {isLoading ? (
+          [...Array(2)].map((_, i) => <SkeletonCard key={i} />)
+        ) : (
+          <>
+            {stats?.lastFile && (
+              <div className="card flex items-center gap-3 py-3">
+                <FileXls size={20} weight="duotone" className="text-green-600 dark:text-green-400 shrink-0" />
+                <div className="text-sm min-w-0">
+                  <p className="text-xs text-gray-400 dark:text-zinc-500 mb-0.5">Último arquivo importado</p>
+                  <p className="font-medium text-gray-800 dark:text-zinc-200 truncate">{stats.lastFile}</p>
+                </div>
+              </div>
+            )}
+            <div className="card flex items-center gap-3 py-3">
+              <CalendarBlank size={20} weight="duotone" className="text-brand-600 dark:text-brand-400 shrink-0" />
+              <div className="text-sm">
+                <p className="text-xs text-gray-400 dark:text-zinc-500 mb-0.5">Última sincronização</p>
+                <p className="font-medium text-gray-800 dark:text-zinc-200">
+                  {formatRelative(stats?.lastSync ?? null)}
+                </p>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* ── Ações rápidas ── */}
       <div className="card">
@@ -192,10 +196,10 @@ export default function Dashboard() {
           >
             <div>
               <p className="font-semibold text-amber-900 dark:text-amber-300 text-sm">
-                Empresas pendentes
+                Ver pendentes
               </p>
               <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
-                {stats?.pending ?? '…'} aguardando preenchimento
+                {stats?.pending ?? '…'} empresa{stats?.pending !== 1 ? 's' : ''} aguardando dados
               </p>
             </div>
             <ArrowRight
@@ -214,10 +218,10 @@ export default function Dashboard() {
           >
             <div>
               <p className="font-semibold text-green-900 dark:text-green-300 text-sm">
-                Prontos para gerar
+                Prontas para gerar
               </p>
               <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
-                {stats?.withData ?? '…'} com todos os dados preenchidos
+                {stats?.withData ?? '…'} empresa{stats?.withData !== 1 ? 's' : ''} com dados completos
               </p>
             </div>
             <ArrowRight

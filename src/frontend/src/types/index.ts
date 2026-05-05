@@ -59,7 +59,9 @@ export interface DashboardStats {
   withData:       number;
   pending:        number;
   lastFile:       string | null;
+  lastSync:       string | null;   // ISO timestamp da última sincronização
   totalDocuments: number;
+  docsThisMonth:  number;
 }
 
 export interface ListResponse {
