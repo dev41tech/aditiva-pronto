@@ -94,9 +94,13 @@ export async function generateDocument(req: Request, res: Response, next: NextFu
     if (!company) throw new AppError(404, 'Empresa não encontrada.');
 
     const complement = await findComplement(req.params.id);
-    if (!complement) throw new AppError(422, 'Dados complementares não preenchidos.');
-    if (!complement.nome_socio || !complement.cpf_socio) {
-      throw new AppError(422, 'Nome do sócio e CPF são obrigatórios para gerar o documento.');
+
+    // Erros 400 amigáveis — exibidos diretamente no frontend
+    if (!complement) {
+      throw new AppError(400, 'Preencha e salve Nome Sócio e CPF Sócio antes de gerar o DOCX.');
+    }
+    if (!complement.nome_socio?.trim() || !complement.cpf_socio?.trim()) {
+      throw new AppError(400, 'Preencha e salve Nome Sócio e CPF Sócio antes de gerar o DOCX.');
     }
 
     const fileName = safeFileName(company.razao_social, company.cnpj);

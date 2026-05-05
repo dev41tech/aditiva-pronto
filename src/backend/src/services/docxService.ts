@@ -1,13 +1,10 @@
 /**
- * docxService — geração de Termos Aditivos
+ * docxService — geração de Termos Aditivos via docxtemplater
  *
- * Estratégia de substituição:
- *  1. Para a assinatura: substitui {{NOME_SOCIO_ASSINATURA}} diretamente no XML,
- *     preservando integralmente a tabela de 2 colunas já existente no template.
- *  2. Para o bloco CONTRATANTE: substitui o parágrafo de descrição dinamicamente.
- *  3. Para campos pontuais (CNPJ, CPF, data): substituição literal/regex por parágrafo.
- *
- * Jamais reconstrói nem injeta novas tabelas de assinatura.
+ * Placeholders esperados no template (chaves simples, caixa alta):
+ *   {CONTRATANTE_TEXTO}     — bloco completo do contratante
+ *   {DATA_DOCUMENTO}        — "Curitiba, 05 de maio de 2026."
+ *   {NOME_SOCIO_ASSINATURA} — nome do sócio em caixa alta (célula da tabela)
  */
 
 import PizZip from 'pizzip';
@@ -15,15 +12,47 @@ import Docxtemplater from 'docxtemplater';
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger';
-import { formatCNPJ, formatCPF, formatDatePtBr } from '../utils/formatters';
+import { formatCNPJ, formatDatePtBr } from '../utils/formatters';
 import { saveDocument } from '../repositories/companyRepository';
 import { buildContratanteText } from './textBuilderService';
 
 // ── Tipos ─────────────────────────────────────────────────────────────
 
+interface CompanyInput {
+  id:           string;
+  razao_social: string;
+  cnpj:         string;
+}
+
+interface ComplementInput {
+  nome_socio:   string;
+  cpf_socio:    string;
+  endereco_empresa?:               string | null;
+  numero_empresa?:                 string | null;
+  bairro_empresa?:                 string | null;
+  cidade_empresa?:                 string | null;
+  estado_empresa?:                 string | null;
+  cep_empresa?:                    string | null;
+  nacionalidade_socio?:            string | null;
+  estado_civil_socio?:             string | null;
+  profissao_socio?:                string | null;
+  endereco_socio?:                 string | null;
+  numero_socio?:                   string | null;
+  bairro_socio?:                   string | null;
+  cidade_socio?:                   string | null;
+  estado_socio?:                   string | null;
+  cep_socio?:                      string | null;
+  contato_administrativo_nome?:    string | null;
+  contato_administrativo_telefone?: string | null;
+  contato_administrativo_email?:   string | null;
+  contato_financeiro_nome?:        string | null;
+  contato_financeiro_telefone?:    string | null;
+  contato_financeiro_email?:       string | null;
+}
+
 interface GeneratePayload {
-  company:    { id: string; razao_social: string; cnpj: string };
-  complement: Parameters<typeof buildContratanteText>[1];
+  company:    CompanyInput;
+  complement: ComplementInput;
 }
 
 export interface DocxResult {
@@ -34,10 +63,6 @@ export interface DocxResult {
 
 // ── Constantes ────────────────────────────────────────────────────────
 
-/** Placeholder exato que deve constar na célula esquerda da tabela de assinatura. */
-const SIGNATURE_PLACEHOLDER = '{{NOME_SOCIO_ASSINATURA}}';
-
-/** Cidade usada na linha de data ("Curitiba, DD de mês de AAAA."). */
 const CIDADE_DOC = process.env.CIDADE_DOC || 'Curitiba';
 
 // ── Helpers de path ───────────────────────────────────────────────────
@@ -55,169 +80,22 @@ function getOutputDir(): string {
   return dir;
 }
 
-// ── Helpers XML ───────────────────────────────────────────────────────
-
-function xmlEscape(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/** Extrai o texto visível de um elemento <w:p> concatenando todos os <w:t>. */
-function extractParaText(paraXml: string): string {
-  return [...paraXml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)]
-    .map(m => m[1])
-    .join('');
-}
+// ── Helper de validação ───────────────────────────────────────────────
 
 /**
- * Reconstrói um <w:p> substituindo todo o texto visível, mas preservando
- * <w:pPr> (alinhamento, indentação) e o <w:rPr> do primeiro run (negrito, fonte, cor…).
+ * Garante que um valor existe e não é vazio após trim.
+ * Lança erro 400-friendly com o nome do campo se ausente.
  */
-function rebuildPara(originalXml: string, newText: string): string {
-  const pPr = originalXml.match(/<w:pPr>[\s\S]*?<\/w:pPr>/)?.[0] ?? '';
-  const rPr = originalXml.match(/<w:rPr>[\s\S]*?<\/w:rPr>/)?.[0] ?? '';
-  return (
-    `<w:p>` +
-    `${pPr}` +
-    `<w:r>${rPr}<w:t xml:space="preserve">${xmlEscape(newText)}</w:t></w:r>` +
-    `</w:p>`
-  );
-}
+function requiredString(value: unknown, fieldName: string): string {
+  const finalValue = (value === null || value === undefined)
+    ? ''
+    : String(value).trim();
 
-/**
- * Substitui texto em cada parágrafo individualmente.
- * Suporta string literal ou RegExp como padrão de busca.
- * NÃO toca na estrutura de tabelas — trabalha dentro de <w:p>.
- */
-function applyParagraphReplacements(
-  docXml: string,
-  replacements: Array<[string | RegExp, string]>,
-): { xml: string; count: number } {
-  let count = 0;
-
-  const result = docXml.replace(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g, (paraXml) => {
-    const text = extractParaText(paraXml);
-    if (!text.trim()) return paraXml;
-
-    let newText = text;
-    let changed = false;
-
-    for (const [from, to] of replacements) {
-      if (typeof from === 'string') {
-        if (newText.includes(from)) {
-          newText = newText.split(from).join(to);
-          changed = true;
-        }
-      } else {
-        from.lastIndex = 0;
-        if (from.test(newText)) {
-          from.lastIndex = 0;
-          newText = newText.replace(from, to);
-          changed = true;
-        }
-      }
-    }
-
-    if (changed) {
-      count++;
-      return rebuildPara(paraXml, newText);
-    }
-    return paraXml;
-  });
-
-  return { xml: result, count };
-}
-
-/**
- * Substitui o bloco de descrição CONTRATANTE pelo texto gerado dinamicamente.
- * Procura o parágrafo que começa com "CONTRATANTE:" e substitui o conteúdo
- * até a próxima seção (CONTRATADA:, CLÁUSULA, etc.).
- */
-function replaceContratanteBlock(
-  docXml: string,
-  contratanteText: string,
-): { xml: string; found: boolean } {
-  const paraRegex = /<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g;
-  const paras: Array<{ xml: string; text: string; start: number; end: number }> = [];
-
-  let m: RegExpExecArray | null;
-  while ((m = paraRegex.exec(docXml)) !== null) {
-    paras.push({
-      xml: m[0], text: extractParaText(m[0]),
-      start: m.index, end: m.index + m[0].length,
-    });
+  if (!finalValue) {
+    throw new Error(`Campo obrigatório ausente para DOCX: ${fieldName}`);
   }
 
-  const contIdx = paras.findIndex(p => /CONTRATANTE\s*:/i.test(p.text));
-  if (contIdx === -1) return { xml: docXml, found: false };
-
-  const nextIdx = paras.findIndex((p, i) => {
-    if (i <= contIdx) return false;
-    return /^(CONTRATADA\s*:|OBJETO\s*:|CL[ÁA]USULA|VALOR\s*:|DO\s+OBJETO|CONSIDERANDO)/i.test(p.text.trim());
-  });
-  if (nextIdx === -1) return { xml: docXml, found: false };
-
-  const cPara      = paras[contIdx];
-  const isLabel    = /^CONTRATANTE\s*:?\s*$/.test(cPara.text.trim());
-  const insertStart = isLabel ? cPara.end : cPara.start;
-  const insertEnd   = paras[nextIdx].start;
-  const refXml      = isLabel ? (paras[contIdx + 1]?.xml ?? cPara.xml) : cPara.xml;
-
-  return {
-    xml:   docXml.slice(0, insertStart) + rebuildPara(refXml, contratanteText) + docXml.slice(insertEnd),
-    found: true,
-  };
-}
-
-// ── Substituição da assinatura ─────────────────────────────────────────
-
-/**
- * Substitui {{NOME_SOCIO_ASSINATURA}} pelo nome do sócio em caixa alta,
- * preservando integralmente a tabela de 2 colunas do template.
- *
- * Tentativa 1 — substituição direta no XML raw (preserva 100% da formatação).
- * Tentativa 2 — substituição via extração de parágrafo (fallback para texto fragmentado).
- *
- * Lança erro amigável se o placeholder não for encontrado.
- */
-function replaceSignaturePlaceholder(
-  docXml: string,
-  socioUpperCase: string,
-): string {
-  // ── Tentativa 1: substituição direta (placeholder em um único <w:t>) ──
-  const direct = docXml.replace(
-    /\{\{NOME_SOCIO_ASSINATURA\}\}/g,
-    xmlEscape(socioUpperCase),
-  );
-
-  if (direct !== docXml) {
-    logger.info('[docx] {{NOME_SOCIO_ASSINATURA}} substituído — modo direto');
-    return direct;
-  }
-
-  // ── Tentativa 2: parágrafo-level (texto fragmentado em múltiplos <w:r>) ──
-  // Word pode dividir o texto do placeholder em runs separados ao editar.
-  const { xml: paraXml, count } = applyParagraphReplacements(docXml, [
-    [SIGNATURE_PLACEHOLDER, socioUpperCase],
-  ]);
-
-  if (count > 0) {
-    logger.info('[docx] {{NOME_SOCIO_ASSINATURA}} substituído — modo parágrafo (texto fragmentado)');
-    return paraXml;
-  }
-
-  // ── Placeholder não encontrado → erro amigável ────────────────────────
-  throw new Error(
-    `O template DOCX não contém o placeholder "${SIGNATURE_PLACEHOLDER}".\n` +
-    `Para corrigir:\n` +
-    `  1. Abra o template (${path.basename(getTemplatePath())}) no Word.\n` +
-    `  2. Localize a tabela de assinatura no final do documento.\n` +
-    `  3. Na célula esquerda (nome do sócio), substitua o conteúdo por: ${SIGNATURE_PLACEHOLDER}\n` +
-    `  4. Salve o arquivo e faça upload novamente para o servidor.`,
-  );
+  return finalValue;
 }
 
 // ── Geração principal ─────────────────────────────────────────────────
@@ -226,142 +104,110 @@ export async function generateDocx(
   payload: GeneratePayload,
   outputFileName: string,
 ): Promise<DocxResult> {
+
+  // ── Log diagnóstico: dados brutos do banco ────────────────────────
+  logger.info('[docx] company raw', payload.company);
+  logger.info('[docx] complement raw', payload.complement);
+
+  // ── Validação e extração dos campos obrigatórios ──────────────────
+  const razaoSocial = requiredString(payload.company?.razao_social,   'razao_social');
+  const cnpj        = requiredString(payload.company?.cnpj,           'cnpj');
+  const nomeSocio   = requiredString(payload.complement?.nome_socio,  'nome_socio');
+  const cpfSocio    = requiredString(payload.complement?.cpf_socio,   'cpf_socio');
+
+  // ── Valores derivados ─────────────────────────────────────────────
+  const nomeSocioAssinatura = nomeSocio.toUpperCase();
+
+  // "Curitiba, 05 de maio de 2026." — incluindo cidade e ponto final
+  const dataDocumento = `${CIDADE_DOC}, ${formatDatePtBr(new Date())}.`;
+
+  // Texto completo do bloco CONTRATANTE
+  const textoContratante = buildContratanteText(
+    { razao_social: razaoSocial, cnpj },
+    { ...payload.complement, nome_socio: nomeSocio, cpf_socio: cpfSocio },
+  );
+
+  // ── Template data — chaves IDÊNTICAS aos placeholders do DOCX ─────
+  const templateData = {
+    CONTRATANTE_TEXTO:     textoContratante,
+    DATA_DOCUMENTO:        dataDocumento,
+    NOME_SOCIO_ASSINATURA: nomeSocioAssinatura,
+  };
+
+  // ── Validação explícita antes de renderizar ───────────────────────
+  if (!templateData.CONTRATANTE_TEXTO)     throw new Error('CONTRATANTE_TEXTO vazio');
+  if (!templateData.DATA_DOCUMENTO)        throw new Error('DATA_DOCUMENTO vazio');
+  if (!templateData.NOME_SOCIO_ASSINATURA) throw new Error('NOME_SOCIO_ASSINATURA vazio');
+
+  // ── Log do templateData final (confirmar ausência de undefined) ───
+  logger.info('[docx] templateData final', {
+    CONTRATANTE_TEXTO:     templateData.CONTRATANTE_TEXTO,
+    DATA_DOCUMENTO:        templateData.DATA_DOCUMENTO,
+    NOME_SOCIO_ASSINATURA: templateData.NOME_SOCIO_ASSINATURA,
+  });
+
+  // ── Leitura do template ───────────────────────────────────────────
   const templatePath = getTemplatePath();
 
   if (!fs.existsSync(templatePath)) {
     throw new Error(
       `Template não encontrado em: "${templatePath}". ` +
-      `Configure TEMPLATE_PATH no .env apontando para o arquivo .docx.`,
+      `Configure TEMPLATE_PATH (ou TEMPLATE_DIR + TEMPLATE_FILE) no .env.`,
     );
   }
 
   const templateBuffer = fs.readFileSync(templatePath);
   const zip            = new PizZip(templateBuffer);
-  const docXmlRaw      = zip.files['word/document.xml']?.asText() ?? '';
 
-  if (!docXmlRaw) {
-    throw new Error('Arquivo .docx inválido: word/document.xml não encontrado.');
+  if (!zip.files['word/document.xml']) {
+    throw new Error('Arquivo .docx inválido: word/document.xml não encontrado no ZIP.');
   }
 
-  // ── Dados calculados ────────────────────────────────────────────────
-  const textoContratante = buildContratanteText(payload.company, payload.complement);
-  const cnpjFormatted    = formatCNPJ(payload.company.cnpj);
-  const cpfFormatted     = formatCPF(payload.complement.cpf_socio ?? '');
-  const dataExtenso      = formatDatePtBr(); // hoje, fuso America/Sao_Paulo
-  const socioUpperCase   = (payload.complement.nome_socio ?? '').toUpperCase();
+  // ── Renderização via docxtemplater ────────────────────────────────
+  const doc = new Docxtemplater(zip, {
+    paragraphLoop: true,
+    linebreaks:    true,
+    errorLogging:  false,
+  });
 
-  const hasDocxtemplaterTags = /\{[a-z_]+\}/i.test(docXmlRaw);
-  logger.info(
-    `[docx] template: ${path.basename(templatePath)} | ` +
-    `modo: ${hasDocxtemplaterTags ? 'docxtemplater' : 'XML direto'} | ` +
-    `sócio: "${socioUpperCase}" | data: "${dataExtenso}"`,
-  );
-
-  let buf: Buffer;
-
-  if (hasDocxtemplaterTags) {
-    // ══════════════════════════════════════════════════════════════════
-    // MODO 1 — docxtemplater ({placeholder} com chaves simples)
-    // O template define {texto_contratante}, {nome_socio}, {data_extenso}…
-    // ══════════════════════════════════════════════════════════════════
-    const doc = new Docxtemplater(zip, {
-      paragraphLoop: true,
-      linebreaks:    true,
-      errorLogging:  false,
+  try {
+    doc.render(templateData);
+  } catch (err: unknown) {
+    const e = err as { properties?: { errors?: unknown[] }; message?: string };
+    logger.error('[docx] erro ao renderizar template', {
+      error:  e.message,
+      errors: e?.properties?.errors,
     });
-
-    doc.setData({
-      texto_contratante:       textoContratante,
-      nome_socio:              socioUpperCase,  // usado no corpo e na assinatura
-      nome_socio_assinatura:   socioUpperCase,  // alias explícito para a assinatura
-      razao_social:            payload.company.razao_social,
-      cnpj:                    cnpjFormatted,
-      cpf:                     cpfFormatted,
-      data_extenso:            dataExtenso,
-      cidade:                  CIDADE_DOC,
-    });
-
-    try {
-      doc.render();
-    } catch (err: unknown) {
-      const e = err as { properties?: { errors?: unknown[] }; message?: string };
-      logger.error('[docx] erro ao renderizar template', { error: e.message });
-      if (e?.properties?.errors?.length) {
-        throw new Error(`Erro no template DOCX: ${JSON.stringify(e.properties.errors)}`);
-      }
-      throw err;
+    if (e?.properties?.errors?.length) {
+      throw new Error(
+        `Erro no template DOCX: ${JSON.stringify(e.properties.errors, null, 2)}\n` +
+        `Verifique se os placeholders {CONTRATANTE_TEXTO}, {DATA_DOCUMENTO} e ` +
+        `{NOME_SOCIO_ASSINATURA} estão presentes no arquivo template.`,
+      );
     }
-
-    buf = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' });
-
-    // Aplica substituição do placeholder de assinatura mesmo no modo docxtemplater,
-    // caso o template misture os dois estilos.
-    if (buf.toString('utf8').includes(SIGNATURE_PLACEHOLDER)) {
-      logger.info('[docx] {{NOME_SOCIO_ASSINATURA}} detectado após docxtemplater — aplicando substituição complementar');
-      const zip2   = new PizZip(buf);
-      const docXml2 = zip2.files['word/document.xml']?.asText() ?? '';
-      const fixed   = replaceSignaturePlaceholder(docXml2, socioUpperCase);
-      zip2.file('word/document.xml', fixed);
-      buf = zip2.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
-    }
-
-  } else {
-    // ══════════════════════════════════════════════════════════════════
-    // MODO 2 — substituição XML direta ({{PLACEHOLDER}} com chaves duplas
-    //          ou literais como "Razão Social", "XX.XXX.XXX/XXXX-XX")
-    // ══════════════════════════════════════════════════════════════════
-    let docXml = docXmlRaw;
-
-    // 1. Assinatura — substitui {{NOME_SOCIO_ASSINATURA}} preservando a tabela
-    //    (lança erro amigável se o placeholder não existir)
-    docXml = replaceSignaturePlaceholder(docXml, socioUpperCase);
-
-    // 2. Bloco CONTRATANTE — substitui parágrafo de descrição
-    const blockResult = replaceContratanteBlock(docXml, textoContratante);
-    if (blockResult.found) {
-      logger.info('[docx] bloco CONTRATANTE substituído');
-      docXml = blockResult.xml;
-    } else {
-      logger.warn('[docx] marcador CONTRATANTE: não encontrado — tentando substituições pontuais');
-    }
-
-    // 3. Campos pontuais (data, CNPJ, CPF, nome se não coberto acima)
-    const dateRegex = new RegExp(
-      `${CIDADE_DOC},\\s+\\d{1,2}\\s+de\\s+\\w+\\s+de\\s+\\d{4}\\.`,
-      'gi',
-    );
-
-    const { xml: xmlAfter, count } = applyParagraphReplacements(docXml, [
-      ['Razão Social',         payload.company.razao_social],
-      ['XX.XXX.XXX/XXXX-XX',  cnpjFormatted],
-      ['XXX.XXX.XXX-XX',       cpfFormatted],
-      ['Nome Sócio',           socioUpperCase],
-      ['DD de mês de AAAA',    dataExtenso],
-      [dateRegex,              `${CIDADE_DOC}, ${dataExtenso}.`],
-    ]);
-    docXml = xmlAfter;
-
-    if (count > 0) {
-      logger.info(`[docx] ${count} parágrafo(s) com substituições pontuais`);
-    }
-
-    zip.file('word/document.xml', docXml);
-    buf = zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+    throw err;
   }
 
-  // ── Diagnóstico final ──────────────────────────────────────────────
+  const buf = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+
+  // ── Diagnóstico final ─────────────────────────────────────────────
   if (buf.equals(templateBuffer)) {
-    logger.warn('[docx] ATENÇÃO: buffer gerado é idêntico ao template — nenhuma substituição aplicada');
+    logger.warn(
+      '[docx] ATENÇÃO: buffer gerado é idêntico ao template — ' +
+      'nenhum placeholder foi substituído. ' +
+      'Verifique se o template contém {CONTRATANTE_TEXTO}, {DATA_DOCUMENTO} e {NOME_SOCIO_ASSINATURA}.',
+    );
   } else {
     logger.info(`[docx] gerado com sucesso (${buf.length} bytes)`);
   }
 
-  // ── Persistência ───────────────────────────────────────────────────
+  // ── Persistência em disco e banco ─────────────────────────────────
   const outputDir  = getOutputDir();
   const outputPath = path.join(outputDir, outputFileName);
   fs.writeFileSync(outputPath, buf);
   logger.info(`[docx] arquivo salvo em: "${outputPath}"`);
 
   await saveDocument(payload.company.id, outputFileName, outputPath);
+
   return { buffer: buf, filePath: outputPath, fileName: outputFileName };
 }
