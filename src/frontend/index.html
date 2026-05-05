@@ -7,19 +7,6 @@
     <meta name="description" content="Aditiva Pronto — Gestão de Termos Aditivos · 41 Tech" />
     <title>Aditiva Pronto — 41 Tech</title>
 
-    <!--
-      Aplica o tema salvo ANTES do React montar, evitando flash de tema errado.
-      Lê localStorage['theme']; se não existir, usa preferência do sistema.
-    -->
-    <script>
-      (function () {
-        var stored = localStorage.getItem('theme');
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (stored === 'dark' || (!stored && prefersDark)) {
-          document.documentElement.classList.add('dark');
-        }
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

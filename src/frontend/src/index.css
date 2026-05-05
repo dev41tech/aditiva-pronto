@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Pre-React dark mode fallback via CSS media query.
+  When useTheme mounts it adds .dark or .light to <html>,
+  overriding this rule. html:not(.light) ensures the CSS
+  fallback only fires when the user hasn't explicitly chosen light.
+*/
+@media (prefers-color-scheme: dark) {
+  html:not(.light) {
+    background-color: #09090b; /* zinc-950 */
+    color: #f4f4f5;            /* zinc-100 */
+  }
+}
+
 @layer base {
   html {
     @apply text-gray-900 bg-gray-50 dark:bg-zinc-950 dark:text-zinc-100;
