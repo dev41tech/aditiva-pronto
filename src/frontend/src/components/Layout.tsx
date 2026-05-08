@@ -9,32 +9,21 @@ export default function Layout() {
   const navClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
       isActive
-        ? 'bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'
-        : 'text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-zinc-100'
+        ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-200'
+        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
     }`;
 
   /*
-    Estratégia de logo dinâmica:
-    - Tema escuro: tenta /logo-white.png → fallback para /favicon.png com filtro CSS
-    - Tema claro:  tenta /logo-blue.png  → fallback para /favicon.png (normal)
-    Se os arquivos logo-white.png / logo-blue.png não existirem, o onError cai
-    para favicon.png. Em tema escuro, aplica brightness-0 + invert para
-    transformar qualquer logo colorida em branca.
+    Estratégia de logo: fonte única (/logo-blue.png).
+    - Modo claro : exibe como está (azul sobre fundo branco).
+    - Modo escuro: aplica brightness(0) invert(1) → converte azul em branco.
+    Isso elimina a necessidade de dois arquivos separados.
+    Se o arquivo não existir, a imagem é ocultada via onError.
   */
-  const logoSrc    = theme === 'dark' ? '/logo-white.png' : '/logo-blue.png';
-  const logoClass  = theme === 'dark'
-    ? 'h-7 w-7 object-contain dark-logo-filter'
-    : 'h-7 w-7 object-contain';
+  const logoFilter = theme === 'dark' ? 'brightness(0) invert(1)' : 'none';
 
   const handleLogoError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.target as HTMLImageElement;
-    if (!img.src.includes('favicon.png')) {
-      img.src = '/favicon.png';
-      // Se estiver em tema escuro e caiu no fallback, aplica filtro CSS
-      if (theme === 'dark') {
-        img.style.filter = 'brightness(0) invert(1)';
-      }
-    }
+    (e.target as HTMLImageElement).style.display = 'none';
   };
 
   return (
@@ -44,16 +33,17 @@ export default function Layout() {
       <header className="h-14 shrink-0 bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 flex items-center px-5 gap-4 z-10">
         <div className="flex items-center gap-3">
           <img
-            src={logoSrc}
+            src="/logo-blue.png"
             alt="41 Tech"
-            className={logoClass}
+            className="h-7 w-7 object-contain"
+            style={{ filter: logoFilter }}
             onError={handleLogoError}
           />
           <div className="leading-none">
-            <span className="font-bold text-gray-900 dark:text-zinc-100 text-base tracking-tight">
+            <span className="font-bold text-gray-900 dark:text-white text-base tracking-tight">
               Aditiva Pronto
             </span>
-            <span className="block text-[10px] text-gray-400 dark:text-zinc-500 font-medium tracking-widest uppercase">
+            <span className="block text-[10px] text-gray-500 dark:text-slate-300 font-medium tracking-widest uppercase">
               41 Tech
             </span>
           </div>
@@ -68,7 +58,7 @@ export default function Layout() {
       <div className="flex flex-1 min-h-0">
 
         {/* Sidebar */}
-        <aside className="w-52 shrink-0 bg-white dark:bg-zinc-900 border-r border-gray-100 dark:border-zinc-800 flex flex-col">
+        <aside className="w-52 shrink-0 bg-white dark:bg-zinc-900 border-r border-slate-200 dark:border-slate-800 flex flex-col">
           <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
             <NavLink to="/" end className={navClass}>
               <House size={17} weight="duotone" />
@@ -84,8 +74,8 @@ export default function Layout() {
             </NavLink>
           </nav>
 
-          <div className="px-4 py-3 border-t border-gray-100 dark:border-zinc-800">
-            <p className="text-[11px] text-gray-400 dark:text-zinc-600">
+          <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-800">
+            <p className="text-[11px] text-gray-400 dark:text-slate-500">
               41 Tech © {new Date().getFullYear()}
             </p>
           </div>
