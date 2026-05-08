@@ -8,7 +8,10 @@
       "PowerShell(node --version)",
       "PowerShell(npm --version)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "mcp__obsidian__obsidian_get_note",
+      "mcp__obsidian__obsidian_list_notes",
+      "mcp__obsidian__obsidian_write_note"
     ]
   }
 }

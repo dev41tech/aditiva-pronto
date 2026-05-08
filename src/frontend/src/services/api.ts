@@ -2,6 +2,7 @@ import axios, { type AxiosError } from 'axios';
 import type {
   Company, Complement, GeneratedDocument,
   DashboardStats, ListResponse, PreviewResponse, CompanyStatus,
+  ReportPayload,
 } from '../types';
 
 const http = axios.create({
@@ -114,4 +115,22 @@ export function getDocuments(id: string) {
 
 export function downloadUrl(docId: string) {
   return `${http.defaults.baseURL}/documents/${docId}/download`;
+}
+
+// ── Reports ─────────────────────────────────────────────────────
+export async function exportCompaniesReport(
+  payload: ReportPayload,
+): Promise<void> {
+  const response = await http.post('/reports/companies/export', payload, {
+    responseType: 'blob',
+  });
+
+  // Extrai nome do arquivo do header Content-Disposition
+  const contentDisp = response.headers['content-disposition'] as string | undefined;
+  const match       = contentDisp?.match(/filename="([^"]+)"/);
+  const rawName     = match?.[1]
+    ? decodeURIComponent(match[1])
+    : `clientes_exportados.${payload.format}`;
+
+  triggerBlobDownload(response.data as Blob, rawName);
 }

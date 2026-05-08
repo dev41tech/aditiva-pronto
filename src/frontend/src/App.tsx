@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Companies from './pages/Companies';
 import CompanyDetail from './pages/CompanyDetail';
+import Reports from './pages/Reports';
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="empresas" element={<Companies />} />
             <Route path="empresas/:id" element={<CompanyDetail />} />
+            <Route path="relatorios" element={<Reports />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

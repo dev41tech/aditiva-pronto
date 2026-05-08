@@ -6,6 +6,7 @@ import {
   saveComplement, previewCompany, generateDocument, getDocuments,
 } from '../controllers/companyController';
 import { downloadDocument } from '../controllers/documentController';
+import { exportCompaniesReport } from '../controllers/reportController';
 
 const router = Router();
 
@@ -29,5 +30,8 @@ router.get('/companies/:id/documents',      getDocuments);
 
 // ── Documents ─────────────────────────────────────────────────────
 router.get('/documents/:id/download', downloadDocument);
+
+// ── Reports ───────────────────────────────────────────────────────
+router.post('/reports/companies/export', exportCompaniesReport);
 
 export default router;

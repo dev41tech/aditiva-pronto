@@ -79,3 +79,15 @@ export interface PreviewResponse {
 }
 
 export type CompanyStatus = 'all' | 'pending' | 'ready';
+
+// ── Reports ──────────────────────────────────────────────────────────
+
+export type ReportFormat = 'xlsx' | 'csv';
+export type ReportStatus = 'all' | 'pending' | 'ready';
+
+export interface ReportPayload {
+  format:  ReportFormat;
+  status:  ReportStatus;
+  search?: string;
+  fields:  string[];
+}
