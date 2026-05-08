@@ -103,18 +103,20 @@ const STATUS_OPTIONS: { value: ReportStatus; label: string }[] = [
   { value: 'ready',   label: 'Prontas para gerar termo'     },
 ];
 
-const FORMAT_OPTIONS: { value: ReportFormat; label: string; icon: React.ReactNode }[] = [
-  {
-    value: 'xlsx',
-    label: 'Excel (.xlsx)',
-    icon:  <FileXls size={18} weight="duotone" className="text-green-600 dark:text-green-400" />,
-  },
-  {
-    value: 'csv',
-    label: 'CSV (.csv)',
-    icon:  <FileCsv size={18} weight="duotone" className="text-blue-600 dark:text-blue-400" />,
-  },
+const FORMAT_OPTIONS: { value: ReportFormat; label: string }[] = [
+  { value: 'xlsx', label: 'Excel (.xlsx)' },
+  { value: 'csv',  label: 'CSV (.csv)'    },
 ];
+
+/**
+ * Classes do botão de formato — alto contraste nos dois temas.
+ * Ativo:    fundo azul sólido + texto branco (razão ≥ 4.5:1).
+ * Inativo:  fundo neutro + texto escuro/claro conforme tema.
+ */
+const formatClass = (active: boolean) =>
+  active
+    ? 'border-blue-600 bg-blue-600 text-white dark:border-blue-500 dark:bg-blue-600 dark:text-white'
+    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-950 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white';
 
 // ── Página principal ──────────────────────────────────────────────────
 
@@ -260,23 +262,27 @@ export default function Reports() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <span className="label mb-0">Campos a exportar</span>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={selectAll}
                   disabled={allSelected}
-                  className="text-xs text-brand-600 dark:text-brand-400
-                             hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="text-xs font-medium
+                             text-blue-700 hover:text-blue-900 hover:underline
+                             dark:text-blue-300 dark:hover:text-blue-100
+                             disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
                 >
                   Selecionar todos
                 </button>
-                <span className="text-gray-300 dark:text-zinc-700 text-xs">|</span>
+                <span className="text-slate-300 dark:text-slate-600 text-xs select-none">|</span>
                 <button
                   type="button"
                   onClick={deselectAll}
                   disabled={noneSelected}
-                  className="text-xs text-gray-500 dark:text-zinc-400
-                             hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="text-xs font-medium
+                             text-slate-600 hover:text-slate-900 hover:underline
+                             dark:text-slate-300 dark:hover:text-white
+                             disabled:opacity-40 disabled:cursor-not-allowed disabled:no-underline"
                 >
                   Desmarcar todos
                 </button>
@@ -353,29 +359,35 @@ export default function Reports() {
           <fieldset>
             <legend className="label mb-2">Formato de exportação</legend>
             <div className="flex gap-3" role="group" aria-label="Formato do arquivo">
-              {FORMAT_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border cursor-pointer
-                               transition-colors select-none text-sm font-medium ${
-                    format === opt.value
-                      ? 'border-brand-300 dark:border-brand-700 bg-brand-50 dark:bg-brand-900/30 text-brand-800 dark:text-brand-300'
-                      : 'border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="export-format"
-                    value={opt.value}
-                    checked={format === opt.value}
-                    onChange={() => setFormat(opt.value)}
-                    className="sr-only"
-                    aria-label={opt.label}
-                  />
-                  {opt.icon}
-                  {opt.label}
-                </label>
-              ))}
+              {FORMAT_OPTIONS.map((opt) => {
+                const active = format === opt.value;
+                return (
+                  <label
+                    key={opt.value}
+                    className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border cursor-pointer
+                                 transition-colors select-none text-sm font-semibold
+                                 focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2
+                                 dark:focus-within:ring-offset-zinc-900
+                                 ${formatClass(active)}`}
+                  >
+                    <input
+                      type="radio"
+                      name="export-format"
+                      value={opt.value}
+                      checked={active}
+                      onChange={() => setFormat(opt.value)}
+                      className="sr-only"
+                      aria-label={opt.label}
+                    />
+                    {/* Ícone sem cor fixa — herda currentColor do label (branco se ativo) */}
+                    {opt.value === 'xlsx'
+                      ? <FileXls size={18} weight="duotone" aria-hidden="true" />
+                      : <FileCsv size={18} weight="duotone" aria-hidden="true" />
+                    }
+                    {opt.label}
+                  </label>
+                );
+              })}
             </div>
           </fieldset>
 

@@ -14,17 +14,13 @@ export default function Layout() {
     }`;
 
   /*
-    Estratégia de logo: fonte única (/logo-blue.png).
-    - Modo claro : exibe como está (azul sobre fundo branco).
-    - Modo escuro: aplica brightness(0) invert(1) → converte azul em branco.
-    Isso elimina a necessidade de dois arquivos separados.
-    Se o arquivo não existir, a imagem é ocultada via onError.
+    Logo: usa favicon.png (único arquivo garantidamente presente em public/).
+    - Modo claro : exibe como está (ícone colorido sobre fundo branco).
+    - Modo escuro: brightness(0) invert(1) → converte para branco sobre fundo escuro.
+    Se quiser substituir pela logo oficial, basta colocar o arquivo em
+    public/logo-blue.png e trocar src abaixo — o filtro já está pronto.
   */
   const logoFilter = theme === 'dark' ? 'brightness(0) invert(1)' : 'none';
-
-  const handleLogoError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    (e.target as HTMLImageElement).style.display = 'none';
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-zinc-950">
@@ -33,11 +29,10 @@ export default function Layout() {
       <header className="h-14 shrink-0 bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 flex items-center px-5 gap-4 z-10">
         <div className="flex items-center gap-3">
           <img
-            src="/logo-blue.png"
+            src="/favicon.png"
             alt="41 Tech"
             className="h-7 w-7 object-contain"
             style={{ filter: logoFilter }}
-            onError={handleLogoError}
           />
           <div className="leading-none">
             <span className="font-bold text-gray-900 dark:text-white text-base tracking-tight">
