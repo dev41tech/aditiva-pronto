@@ -27,13 +27,13 @@ export default function Layout() {
       <header className="h-14 shrink-0 bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 flex items-center px-5 gap-4 z-10">
         <div className="flex items-center gap-3">
           <img
-            src="/logo-blue.svg"
+            src="/logo-blue.png"
             alt="Aditiva Pronto"
             className="h-7 w-7 object-contain dark:hidden"
           />
 
           <img
-            src="/logo-white.svg"
+            src="/logo-white.png"
             alt="Aditiva Pronto"
             className="hidden h-7 w-7 object-contain dark:block"
           />
