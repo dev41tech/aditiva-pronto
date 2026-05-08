@@ -20,8 +20,6 @@ export default function Layout() {
     Se quiser substituir pela logo oficial, basta colocar o arquivo em
     public/logo-blue.png e trocar src abaixo — o filtro já está pronto.
   */
-  const logoFilter = theme === 'dark' ? 'brightness(0) invert(1)' : 'none';
-
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-zinc-950">
 
@@ -29,11 +27,17 @@ export default function Layout() {
       <header className="h-14 shrink-0 bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 flex items-center px-5 gap-4 z-10">
         <div className="flex items-center gap-3">
           <img
-            src="/favicon.png"
-            alt="41 Tech"
-            className="h-7 w-7 object-contain"
-            style={{ filter: logoFilter }}
+            src="/logo-blue.svg"
+            alt="Aditiva Pronto"
+            className="h-7 w-7 object-contain dark:hidden"
           />
+
+          <img
+            src="/logo-white.svg"
+            alt="Aditiva Pronto"
+            className="hidden h-7 w-7 object-contain dark:block"
+          />
+
           <div className="leading-none">
             <span className="font-bold text-gray-900 dark:text-white text-base tracking-tight">
               Aditiva Pronto
