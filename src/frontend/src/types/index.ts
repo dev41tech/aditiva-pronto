@@ -3,6 +3,8 @@ export interface Company {
   razao_social: string;
   cnpj:         string;
   source_file:  string | null;
+  responsavel:  string | null;
+  inativo:      number; // 0 = ativa, 1 = inativa
   created_at:   string;
   updated_at:   string;
   // joined
@@ -58,8 +60,9 @@ export interface DashboardStats {
   totalCompanies: number;
   withData:       number;
   pending:        number;
+  inativos:       number;
   lastFile:       string | null;
-  lastSync:       string | null;   // ISO timestamp da última sincronização
+  lastSync:       string | null;
   totalDocuments: number;
   docsThisMonth:  number;
 }
@@ -78,12 +81,12 @@ export interface PreviewResponse {
   cnpj:              string;
 }
 
-export type CompanyStatus = 'all' | 'pending' | 'ready';
+export type CompanyStatus = 'all' | 'pending' | 'ready' | 'inativo';
 
 // ── Reports ──────────────────────────────────────────────────────────
 
 export type ReportFormat = 'xlsx' | 'csv';
-export type ReportStatus = 'all' | 'pending' | 'ready';
+export type ReportStatus = 'all' | 'pending' | 'ready' | 'inativo';
 
 export interface ReportPayload {
   format:  ReportFormat;

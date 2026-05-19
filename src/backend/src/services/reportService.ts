@@ -16,7 +16,7 @@ import { logger } from '../utils/logger';
 // ── Tipos públicos ────────────────────────────────────────────────────
 
 export type ExportFormat = 'xlsx' | 'csv';
-export type ExportStatus = 'all' | 'pending' | 'ready';
+export type ExportStatus = 'all' | 'pending' | 'ready' | 'inativo';
 
 export interface ExportPayload {
   format:  ExportFormat;
@@ -37,6 +37,7 @@ export interface ExportResult {
 export const ALLOWED_FIELDS = [
   'razao_social',
   'cnpj',
+  'responsavel',
   'nome_socio',
   'cpf_socio',
   'endereco_empresa',
@@ -57,6 +58,7 @@ export type AllowedField = (typeof ALLOWED_FIELDS)[number];
 const FIELD_LABELS: Record<AllowedField, string> = {
   razao_social:            'Razão Social',
   cnpj:                    'CNPJ',
+  responsavel:             'Responsável',
   nome_socio:              'Nome Sócio',
   cpf_socio:               'CPF Sócio',
   endereco_empresa:        'Endereço da Empresa',
@@ -76,6 +78,8 @@ const FIELD_LABELS: Record<AllowedField, string> = {
 interface CompanyReportRow extends RowDataPacket {
   razao_social:                     string;
   cnpj:                             string;
+  responsavel:                      string | null;
+  inativo:                          number;
   nome_socio:                       string | null;
   cpf_socio:                        string | null;
   endereco_empresa:                 string | null;
@@ -133,6 +137,8 @@ function resolveField(row: CompanyReportRow, field: AllowedField): string {
       return row.razao_social ?? '';
     case 'cnpj':
       return row.cnpj ?? '';
+    case 'responsavel':
+      return row.responsavel ?? '';
     case 'nome_socio':
       return row.nome_socio ?? '';
     case 'cpf_socio':
@@ -156,6 +162,7 @@ function resolveField(row: CompanyReportRow, field: AllowedField): string {
       return parts.join(' | ');
     }
     case 'status_complemento':
+      if (row.inativo) return 'Inativa';
       return row.has_complement ? 'Pronta' : 'Pendente';
     case 'created_at':
       return formatDate(row.created_at);
@@ -177,6 +184,8 @@ async function fetchRows(payload: ExportPayload): Promise<CompanyReportRow[]> {
     SELECT
       c.razao_social,
       c.cnpj,
+      c.responsavel,
+      c.inativo,
       c.created_at,
       c.updated_at,
       cc.nome_socio,
@@ -205,10 +214,14 @@ async function fetchRows(payload: ExportPayload): Promise<CompanyReportRow[]> {
   `;
 
   // Filtro de status
-  if (payload.status === 'pending') {
-    sql += ` AND cc.id IS NULL`;
+  if (payload.status === 'inativo') {
+    sql += ` AND c.inativo = 1`;
+  } else if (payload.status === 'all') {
+    sql += ` AND c.inativo = 0`;
+  } else if (payload.status === 'pending') {
+    sql += ` AND c.inativo = 0 AND cc.id IS NULL`;
   } else if (payload.status === 'ready') {
-    sql += ` AND cc.id IS NOT NULL AND cc.nome_socio IS NOT NULL AND cc.cpf_socio IS NOT NULL`;
+    sql += ` AND c.inativo = 0 AND cc.id IS NOT NULL AND cc.nome_socio IS NOT NULL AND cc.cpf_socio IS NOT NULL`;
   }
 
   // Filtro de busca — parâmetros preparados, nunca interpolados

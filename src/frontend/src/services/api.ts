@@ -55,12 +55,32 @@ export const syncFromDir = () => http.post('/import/sync').then((r) => r.data);
 
 // ── Companies ───────────────────────────────────────────────────
 export function listCompanies(params: {
-  search?: string;
-  status?: CompanyStatus;
-  page?:   number;
-  limit?:  number;
+  search?:      string;
+  status?:      CompanyStatus;
+  page?:        number;
+  limit?:       number;
+  /** undefined = sem filtro | '__none__' = sem responsável | nome = filtrar pelo nome */
+  responsavel?: string;
 }) {
   return http.get<ListResponse>('/companies', { params }).then((r) => r.data);
+}
+
+export function updateResponsavel(id: string, responsavel: string | null) {
+  return http
+    .patch<{ message: string }>(`/companies/${id}/responsavel`, { responsavel })
+    .then((r) => r.data);
+}
+
+export function bulkUpdateResponsavelApi(ids: string[], responsavel: string | null) {
+  return http
+    .patch<{ message: string; affected: number }>('/companies/bulk/responsavel', { ids, responsavel })
+    .then((r) => r.data);
+}
+
+export function updateCompanyStatus(id: string, inativo: boolean) {
+  return http
+    .patch<{ message: string }>(`/companies/${id}/status`, { inativo })
+    .then((r) => r.data);
 }
 
 export function getCompany(id: string) {

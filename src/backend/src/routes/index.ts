@@ -4,6 +4,7 @@ import { importFile, syncFromDir }  from '../controllers/importController';
 import {
   getStats, listCompanies, getCompany,
   saveComplement, previewCompany, generateDocument, getDocuments,
+  patchResponsavel, bulkPatchResponsavel, patchStatus,
 } from '../controllers/companyController';
 import { downloadDocument } from '../controllers/documentController';
 import { exportCompaniesReport } from '../controllers/reportController';
@@ -21,12 +22,16 @@ router.post('/import/companies', uploadXlsx, importFile);
 router.post('/import/sync',      syncFromDir);
 
 // ── Companies ─────────────────────────────────────────────────────
-router.get('/companies',                    listCompanies);
-router.get('/companies/:id',                getCompany);
-router.put('/companies/:id/complement',     saveComplement);
-router.get('/companies/:id/preview',        previewCompany);
-router.post('/companies/:id/generate-docx', generateDocument);
-router.get('/companies/:id/documents',      getDocuments);
+router.get('/companies',                        listCompanies);
+// bulk deve vir antes de /:id para não ser capturado como id='bulk'
+router.patch('/companies/bulk/responsavel',     bulkPatchResponsavel);
+router.get('/companies/:id',                    getCompany);
+router.put('/companies/:id/complement',         saveComplement);
+router.get('/companies/:id/preview',            previewCompany);
+router.post('/companies/:id/generate-docx',     generateDocument);
+router.get('/companies/:id/documents',          getDocuments);
+router.patch('/companies/:id/responsavel',      patchResponsavel);
+router.patch('/companies/:id/status',           patchStatus);
 
 // ── Documents ─────────────────────────────────────────────────────
 router.get('/documents/:id/download', downloadDocument);

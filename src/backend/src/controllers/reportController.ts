@@ -8,7 +8,7 @@ import {
 } from '../services/reportService';
 
 const VALID_FORMATS:  ExportFormat[] = ['xlsx', 'csv'];
-const VALID_STATUSES: ExportStatus[] = ['all', 'pending', 'ready'];
+const VALID_STATUSES: ExportStatus[] = ['all', 'pending', 'ready', 'inativo'];
 
 // POST /api/reports/companies/export
 export async function exportCompaniesReport(

@@ -7,6 +7,8 @@ export interface CompanyRow extends RowDataPacket {
   razao_social: string;
   cnpj: string;
   source_file: string | null;
+  responsavel: string | null;
+  inativo: number; // 0 = ativa, 1 = inativa
   created_at: Date;
   updated_at: Date;
   // campos do complement (via JOIN)
@@ -45,24 +47,28 @@ export interface ComplementRow extends RowDataPacket {
   updated_at: Date;
 }
 
-export type CompanyStatus = 'all' | 'pending' | 'ready';
+export type CompanyStatus = 'all' | 'pending' | 'ready' | 'inativo';
 
 export interface ListOptions {
   search?: string;
   status?: CompanyStatus;
   limit?: number;
   offset?: number;
+  /** undefined = sem filtro | '__none__' = sem responsável | nome = filtrar pelo nome */
+  responsavel?: string;
 }
 
 // ── COMPANIES ────────────────────────────────────────────────────
 
 export async function findAll(opts: ListOptions = {}): Promise<CompanyRow[]> {
   const db = getPool();
-  const { search = '', status = 'all', limit = 100, offset = 0 } = opts;
+  const { search = '', status = 'all', limit = 100, offset = 0, responsavel } = opts;
 
   let sql = `
     SELECT
-      c.id, c.razao_social, c.cnpj, c.source_file, c.created_at, c.updated_at,
+      c.id, c.razao_social, c.cnpj, c.source_file,
+      c.responsavel, c.inativo,
+      c.created_at, c.updated_at,
       cc.id           AS complement_id,
       cc.nome_socio,
       cc.cpf_socio
@@ -78,10 +84,21 @@ export async function findAll(opts: ListOptions = {}): Promise<CompanyRow[]> {
     params.push(`%${search}%`, `%${search}%`);
   }
 
-  if (status === 'pending') {
-    sql += ` AND cc.id IS NULL`;
+  if (status === 'inativo') {
+    sql += ` AND c.inativo = 1`;
+  } else if (status === 'all') {
+    sql += ` AND c.inativo = 0`;
+  } else if (status === 'pending') {
+    sql += ` AND c.inativo = 0 AND cc.id IS NULL`;
   } else if (status === 'ready') {
-    sql += ` AND cc.id IS NOT NULL AND cc.nome_socio IS NOT NULL AND cc.cpf_socio IS NOT NULL`;
+    sql += ` AND c.inativo = 0 AND cc.id IS NOT NULL AND cc.nome_socio IS NOT NULL AND cc.cpf_socio IS NOT NULL`;
+  }
+
+  if (responsavel === '__none__') {
+    sql += ` AND c.responsavel IS NULL`;
+  } else if (responsavel) {
+    sql += ` AND c.responsavel = ?`;
+    params.push(responsavel);
   }
 
   sql += ` ORDER BY c.razao_social ASC LIMIT ? OFFSET ?`;
@@ -91,9 +108,11 @@ export async function findAll(opts: ListOptions = {}): Promise<CompanyRow[]> {
   return rows;
 }
 
-export async function countAll(opts: Pick<ListOptions, 'search' | 'status'> = {}): Promise<number> {
+export async function countAll(
+  opts: Pick<ListOptions, 'search' | 'status' | 'responsavel'> = {},
+): Promise<number> {
   const db = getPool();
-  const { search = '', status = 'all' } = opts;
+  const { search = '', status = 'all', responsavel } = opts;
 
   let sql = `
     SELECT COUNT(*) AS total
@@ -107,8 +126,23 @@ export async function countAll(opts: Pick<ListOptions, 'search' | 'status'> = {}
     sql += ` AND (c.razao_social LIKE ? OR c.cnpj LIKE ?)`;
     params.push(`%${search}%`, `%${search}%`);
   }
-  if (status === 'pending') sql += ` AND cc.id IS NULL`;
-  else if (status === 'ready') sql += ` AND cc.id IS NOT NULL`;
+
+  if (status === 'inativo') {
+    sql += ` AND c.inativo = 1`;
+  } else if (status === 'all') {
+    sql += ` AND c.inativo = 0`;
+  } else if (status === 'pending') {
+    sql += ` AND c.inativo = 0 AND cc.id IS NULL`;
+  } else if (status === 'ready') {
+    sql += ` AND c.inativo = 0 AND cc.id IS NOT NULL`;
+  }
+
+  if (responsavel === '__none__') {
+    sql += ` AND c.responsavel IS NULL`;
+  } else if (responsavel) {
+    sql += ` AND c.responsavel = ?`;
+    params.push(responsavel);
+  }
 
   const [rows] = await db.query<(RowDataPacket & { total: number })[]>(sql, params);
   return rows[0]?.total ?? 0;
@@ -235,6 +269,41 @@ export async function findDocument(docId: string) {
   return rows[0] ?? null;
 }
 
+// ── RESPONSAVEL / STATUS ─────────────────────────────────────────
+
+export async function updateResponsavel(
+  id: string,
+  responsavel: string | null,
+): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `UPDATE companies SET responsavel = ?, updated_at = NOW() WHERE id = ?`,
+    [responsavel, id],
+  );
+}
+
+export async function bulkUpdateResponsavel(
+  ids: string[],
+  responsavel: string | null,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const db = getPool();
+  const placeholders = ids.map(() => '?').join(', ');
+  const [result] = await db.query<ResultSetHeader>(
+    `UPDATE companies SET responsavel = ?, updated_at = NOW() WHERE id IN (${placeholders})`,
+    [responsavel, ...ids],
+  );
+  return result.affectedRows;
+}
+
+export async function updateInativo(id: string, inativo: boolean): Promise<void> {
+  const db = getPool();
+  await db.query(
+    `UPDATE companies SET inativo = ?, updated_at = NOW() WHERE id = ?`,
+    [inativo ? 1 : 0, id],
+  );
+}
+
 export async function listDocuments(companyId: string) {
   const db = getPool();
   const [rows] = await db.query<RowDataPacket[]>(
@@ -251,11 +320,12 @@ export async function getDashboardStats() {
 
   const [totals] = await db.query<RowDataPacket[]>(`
     SELECT
-      COUNT(*)                                                       AS total,
-      SUM(CASE WHEN cc.id IS NOT NULL THEN 1 ELSE 0 END)            AS with_data,
-      SUM(CASE WHEN cc.id IS NULL     THEN 1 ELSE 0 END)            AS pending,
-      (SELECT source_file FROM companies ORDER BY updated_at DESC LIMIT 1) AS last_file,
-      (SELECT MAX(updated_at) FROM companies)                        AS last_sync
+      COUNT(*)                                                                        AS total,
+      SUM(CASE WHEN c.inativo = 0 AND cc.id IS NOT NULL THEN 1 ELSE 0 END)           AS with_data,
+      SUM(CASE WHEN c.inativo = 0 AND cc.id IS NULL     THEN 1 ELSE 0 END)           AS pending,
+      SUM(CASE WHEN c.inativo = 1                        THEN 1 ELSE 0 END)           AS inativo,
+      (SELECT source_file FROM companies ORDER BY updated_at DESC LIMIT 1)            AS last_file,
+      (SELECT MAX(updated_at) FROM companies)                                         AS last_sync
     FROM companies c
     LEFT JOIN company_complements cc ON cc.company_id = c.id
   `);
@@ -269,11 +339,12 @@ export async function getDashboardStats() {
   `);
 
   return {
-    totalCompanies: totals[0]?.total    ?? 0,
+    totalCompanies: totals[0]?.total     ?? 0,
     withData:       totals[0]?.with_data ?? 0,
     pending:        totals[0]?.pending   ?? 0,
+    inativos:       totals[0]?.inativo   ?? 0,
     lastFile:       totals[0]?.last_file ?? null,
-    lastSync:       totals[0]?.last_sync ?? null,  // timestamp ISO string | null
+    lastSync:       totals[0]?.last_sync ?? null,
     totalDocuments: docs[0]?.total       ?? 0,
     docsThisMonth:  docs[0]?.this_month  ?? 0,
   };

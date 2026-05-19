@@ -25,6 +25,7 @@ const FIELD_GROUPS: FieldGroup[] = [
     fields: [
       { key: 'razao_social', label: 'Razão Social'  },
       { key: 'cnpj',         label: 'CNPJ'          },
+      { key: 'responsavel',  label: 'Responsável'   },
     ],
   },
   {
@@ -98,9 +99,10 @@ function Checkbox({ id, label, checked, onChange }: CheckboxProps) {
 }
 
 const STATUS_OPTIONS: { value: ReportStatus; label: string }[] = [
-  { value: 'all',     label: 'Todas as empresas'            },
+  { value: 'all',     label: 'Todas (exceto inativas)'      },
   { value: 'pending', label: 'Dados pendentes'              },
   { value: 'ready',   label: 'Prontas para gerar termo'     },
+  { value: 'inativo', label: 'Inativas'                     },
 ];
 
 const FORMAT_OPTIONS: { value: ReportFormat; label: string }[] = [

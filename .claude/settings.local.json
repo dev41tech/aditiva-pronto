@@ -13,7 +13,13 @@
       "mcp__obsidian__obsidian_list_notes",
       "mcp__obsidian__obsidian_write_note",
       "Bash(dir \"C:\\\\Users\\\\kauan.brasileiro\\\\Documents\\\\1. Apps\\\\aditiva-pronto\\\\src\\\\frontend\\\\public\" /B)",
-      "Bash(dir \"C:\\\\Users\\\\kauan.brasileiro\\\\Documents\\\\1. Apps\\\\aditiva-pronto\\\\src\\\\frontend\\\\public\\\\*logo*\" /B)"
+      "Bash(dir \"C:\\\\Users\\\\kauan.brasileiro\\\\Documents\\\\1. Apps\\\\aditiva-pronto\\\\src\\\\frontend\\\\public\\\\*logo*\" /B)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\kauan.brasileiro\\\\Documents\\\\1. Apps\\\\aditiva-pronto\" -Force)",
+      "Bash(Select-Object Name, Mode)",
+      "mcp__obsidian__obsidian_patch_note",
+      "mcp__obsidian__obsidian_search_notes",
+      "Bash(node_modules\\\\.bin\\\\tsc --noEmit)",
+      "Bash(\"./node_modules/.bin/tsc\" --noEmit)"
     ]
   }
 }

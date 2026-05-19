@@ -118,3 +118,92 @@
 - [ ] Campos obrigatórios marcados com asterisco e `aria-required`
 - [ ] Contraste dos badges (verde/âmbar) ≥ 4.5:1
 - [ ] Navegação por teclado: Tab percorre todos os campos
+
+---
+
+## Paginação Direta (nova feature)
+
+- [ ] Campo de número de página exibe a página atual ao carregar
+- [ ] Digitar número e pressionar **Enter** navega para a página
+- [ ] Clicar no botão **Ir** navega para a página digitada
+- [ ] Sair do campo (blur) sem confirmar não navega
+- [ ] Digitar página **0** é ajustado para página 1
+- [ ] Digitar página maior que o total é ajustado para a última página
+- [ ] Digitar letras é ignorado (campo aceita apenas números)
+- [ ] URL reflete o parâmetro `?page=N` após navegação
+- [ ] Recarregar a página com `?page=3` abre diretamente na página 3
+- [ ] Aplicar filtro de busca reseta para a página 1
+- [ ] Aplicar filtro de status reseta para a página 1
+- [ ] Botões "Anterior" e "Próxima" continuam funcionando normalmente
+
+---
+
+## Responsável (nova feature)
+
+### Usuário atual
+- [ ] Seletor "Você é:" aparece no cabeçalho da lista
+- [ ] Escolher um nome persiste após recarregar a página (localStorage)
+- [ ] Valor persiste entre abas do mesmo navegador
+
+### Atribuição por linha
+- [ ] Coluna "Responsável" exibe `<select>` com os nomes disponíveis + opção em branco
+- [ ] Selecionar um nome faz chamada `PATCH /companies/:id/responsavel` e atualiza a célula
+- [ ] Selecionar opção em branco remove o responsável (salva `null`)
+- [ ] Clicar no select não abre o detalhe da empresa (stopPropagation)
+- [ ] Após atribuir, recarregar a página mantém o responsável salvo
+
+### Filtro por responsável
+- [ ] Dropdown "Filtrar por responsável" exibe "Todos", nomes e "Sem responsável"
+- [ ] Selecionar um nome lista apenas empresas com aquele responsável
+- [ ] Selecionar "Sem responsável" lista apenas empresas sem responsável
+- [ ] Selecionar "Todos" remove o filtro
+- [ ] Filtro por responsável combina corretamente com filtro de status e busca
+- [ ] Filtro por responsável combina com paginação direta
+
+### Atribuição em massa
+- [ ] Botão "Atribuição em massa" exibe/oculta o painel
+- [ ] Painel tem select de responsável + campos "Da página" e "Até a página"
+- [ ] Campos de página têm valores padrão 1 e página atual
+- [ ] Clicar "Atribuir" com responsável em branco exibe toast de erro
+- [ ] Atribuição em massa bem-sucedida exibe toast de sucesso
+- [ ] Após atribuição, a lista é recarregada com os responsáveis atualizados
+- [ ] Página fora do intervalo válido é ajustada automaticamente
+
+---
+
+## Status Inativo (nova feature)
+
+### Badge e visualização
+- [ ] Empresa com `inativo = 1` exibe badge cinza "Inativa" (ícone Prohibit)
+- [ ] Empresa ativa exibe badge verde "Pronta" ou âmbar "Pendente" normalmente
+- [ ] Badge "Inativa" tem contraste adequado (texto cinza sobre fundo cinza claro) ≥ 4.5:1
+
+### Aba de filtro
+- [ ] Aba "Inativas" aparece no seletor de status
+- [ ] Aba "Inativas" lista apenas empresas com `inativo = 1`
+- [ ] Aba "Todas" exclui inativas (mostra apenas ativas)
+- [ ] Abas "Pendentes" e "Prontas" excluem inativas
+
+### Contagens no Dashboard
+- [ ] Card "Empresas" conta apenas ativas
+- [ ] Card "Pendentes" não inclui inativas
+- [ ] Card "Prontas" não inclui inativas
+- [ ] Inativos não aparecem como pendentes mesmo que não tenham complemento
+
+### Marcação como inativo
+- [ ] Na página de detalhe da empresa, existe toggle/botão para marcar como inativa
+- [ ] Marcar como inativa chama `PATCH /companies/:id/status` com `{ inativo: true }`
+- [ ] Após marcar, o badge muda para cinza "Inativa"
+- [ ] Reativar chama o mesmo endpoint com `{ inativo: false }` e restaura o badge correto
+
+---
+
+## Regressão Geral (smoke test pós-feature)
+
+- [ ] Gerar DOCX de uma empresa "Pronta" continua funcionando sem erros
+- [ ] Exportar relatório (xlsx) inclui coluna "Responsável" com valores corretos
+- [ ] Exportar relatório (csv) inclui coluna "Responsável"
+- [ ] Exportar com filtro "Inativas" exporta apenas empresas inativas
+- [ ] Exportar com filtro "Todas (exceto inativas)" não inclui inativas
+- [ ] Importar planilha não sobrescreve campos `responsavel` e `inativo` já definidos
+- [ ] Sincronização automática (`POST /api/import/sync`) não reseta `responsavel` e `inativo`
