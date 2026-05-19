@@ -403,7 +403,7 @@ export default function Companies() {
               {data.data.map((company: Company) => (
                 <tr
                   key={company.id}
-                  className="table-row"
+                  className="table-row group"
                   onClick={() => navigate(`/empresas/${company.id}`)}
                 >
                   <td className="px-5 py-3.5 font-medium text-gray-900 dark:text-zinc-100">
