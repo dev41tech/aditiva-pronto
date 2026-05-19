@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { House, Buildings, ChartBar } from '@phosphor-icons/react';
+import { House, Buildings, ChartBar, GearSix } from '@phosphor-icons/react';
 import { useTheme } from '../hooks/useTheme';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -70,6 +70,10 @@ export default function Layout() {
             <NavLink to="/relatorios" className={navClass}>
               <ChartBar size={17} weight="duotone" />
               Relatórios
+            </NavLink>
+            <NavLink to="/configuracoes" className={navClass}>
+              <GearSix size={17} weight="duotone" />
+              Configurações
             </NavLink>
           </nav>
 

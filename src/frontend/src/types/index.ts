@@ -83,6 +83,14 @@ export interface PreviewResponse {
 
 export type CompanyStatus = 'all' | 'pending' | 'ready' | 'inativo';
 
+// ── Responsáveis ─────────────────────────────────────────────────────
+
+export interface Responsavel {
+  id:         string;
+  nome:       string;
+  created_at: string;
+}
+
 // ── Reports ──────────────────────────────────────────────────────────
 
 export type ReportFormat = 'xlsx' | 'csv';

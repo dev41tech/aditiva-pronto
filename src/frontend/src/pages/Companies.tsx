@@ -9,14 +9,13 @@ import {
   listCompanies,
   updateResponsavel as apiUpdateResponsavel,
   bulkUpdateResponsavelApi,
+  listResponsaveis,
 } from '../services/api';
 import { maskCNPJ } from '../utils/validators';
 import { useToast } from '../context/ToastContext';
 import type { Company, CompanyStatus } from '../types';
 
 const LIMIT = 20;
-
-const RESPONSAVEIS = ['Colaboradora 1', 'Colaboradora 2', 'Colaboradora 3'];
 
 const STATUS_LABELS: Record<CompanyStatus, string> = {
   all:     'Todas',
@@ -88,6 +87,14 @@ export default function Companies() {
     if (currentUser) localStorage.setItem('aditiva_current_user', currentUser);
     else             localStorage.removeItem('aditiva_current_user');
   }, [currentUser]);
+
+  // ── Responsáveis disponíveis (banco) ─────────────────────────
+  const { data: responsaveisData } = useQuery({
+    queryKey: ['responsaveis'],
+    queryFn:  listResponsaveis,
+    staleTime: 60_000,
+  });
+  const RESPONSAVEIS = (responsaveisData ?? []).map((r) => r.nome);
 
   // ── Query ─────────────────────────────────────────────────────
   const { data, isLoading, isFetching } = useQuery({

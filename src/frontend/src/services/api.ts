@@ -2,7 +2,7 @@ import axios, { type AxiosError } from 'axios';
 import type {
   Company, Complement, GeneratedDocument,
   DashboardStats, ListResponse, PreviewResponse, CompanyStatus,
-  ReportPayload,
+  ReportPayload, Responsavel,
 } from '../types';
 
 const http = axios.create({
@@ -136,6 +136,19 @@ export function getDocuments(id: string) {
 export function downloadUrl(docId: string) {
   return `${http.defaults.baseURL}/documents/${docId}/download`;
 }
+
+// ── Responsáveis ────────────────────────────────────────────────────
+export const listResponsaveis = () =>
+  http.get<Responsavel[]>('/responsaveis').then((r) => r.data);
+
+export const createResponsavel = (nome: string) =>
+  http.post<{ id: string; message: string }>('/responsaveis', { nome }).then((r) => r.data);
+
+export const renameResponsavel = (id: string, nome: string) =>
+  http.patch<{ message: string }>(`/responsaveis/${id}`, { nome }).then((r) => r.data);
+
+export const deleteResponsavelApi = (id: string) =>
+  http.delete<{ message: string }>(`/responsaveis/${id}`).then((r) => r.data);
 
 // ── Reports ─────────────────────────────────────────────────────
 export async function exportCompaniesReport(

@@ -8,6 +8,9 @@ import {
 } from '../controllers/companyController';
 import { downloadDocument } from '../controllers/documentController';
 import { exportCompaniesReport } from '../controllers/reportController';
+import {
+  getResponsaveis, postResponsavel, patchResponsavelNome, removeResponsavel,
+} from '../controllers/responsaveisController';
 
 const router = Router();
 
@@ -38,5 +41,11 @@ router.get('/documents/:id/download', downloadDocument);
 
 // ── Reports ───────────────────────────────────────────────────────
 router.post('/reports/companies/export', exportCompaniesReport);
+
+// ── Responsáveis ──────────────────────────────────────────────────
+router.get('/responsaveis',        getResponsaveis);
+router.post('/responsaveis',       postResponsavel);
+router.patch('/responsaveis/:id',  patchResponsavelNome);
+router.delete('/responsaveis/:id', removeResponsavel);
 
 export default router;

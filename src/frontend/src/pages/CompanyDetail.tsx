@@ -3,10 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Eye, FileDoc, Download, Spinner, Warning, X,
+  Prohibit, ArrowCounterClockwise,
 } from '@phosphor-icons/react';
 import {
   getCompany, saveComplement, getPreview,
   generateDocxBlob, triggerBlobDownload, downloadUrl,
+  updateCompanyStatus,
 } from '../services/api';
 import { useToast } from '../context/ToastContext';
 import CompanyForm, { checkPartialSections } from '../components/CompanyForm';
@@ -133,6 +135,17 @@ export default function CompanyDetail() {
     onError: (e: Error) => toast(`Erro ao gerar DOCX: ${e.message}`, 'error'),
   });
 
+  const statusMut = useMutation({
+    mutationFn: (inativo: boolean) => updateCompanyStatus(id!, inativo),
+    onSuccess: (_, inativo) => {
+      qc.invalidateQueries({ queryKey: ['company', id] });
+      qc.invalidateQueries({ queryKey: ['companies'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      toast(inativo ? 'Empresa marcada como inativa.' : 'Empresa reativada.', 'success');
+    },
+    onError: (e: Error) => toast(`Erro: ${e.message}`, 'error'),
+  });
+
   const { data: preview, isFetching: loadingPreview } = useQuery({
     queryKey: ['preview', id],
     queryFn:  () => getPreview(id!),
@@ -161,6 +174,7 @@ export default function CompanyDetail() {
 
   const { company, complement, documents } = data;
   const generating    = generateMut.isPending;
+  const togglingStatus = statusMut.isPending;
   const partialSects  = checkPartialSections(complement);
 
   function handleGenerateClick() {
@@ -182,20 +196,57 @@ export default function CompanyDetail() {
       {/* ── Header da empresa ── */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-zinc-100">
-            {company.razao_social}
-          </h1>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-zinc-100">
+              {company.razao_social}
+            </h1>
+            {!!company.inativo && (
+              <span className="badge-inativo">
+                <Prohibit size={11} weight="bold" />
+                Inativa
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1 tabular-nums">
             {maskCNPJ(company.cnpj)}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2 shrink-0">
+          {company.inativo ? (
+            <button
+              className="btn-outline"
+              onClick={() => statusMut.mutate(false)}
+              disabled={togglingStatus}
+              title="Reativar empresa"
+            >
+              {togglingStatus
+                ? <Spinner size={15} className="animate-spin" />
+                : <ArrowCounterClockwise size={15} />
+              }
+              Reativar
+            </button>
+          ) : (
+            <button
+              className="btn-ghost text-red-600 hover:text-red-700 hover:bg-red-50
+                         dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30"
+              onClick={() => statusMut.mutate(true)}
+              disabled={togglingStatus}
+              title="Marcar empresa como inativa"
+            >
+              {togglingStatus
+                ? <Spinner size={15} className="animate-spin" />
+                : <Prohibit size={15} />
+              }
+              Inativar
+            </button>
+          )}
+
           <button
             className="btn-outline"
             onClick={() => setShowPreview(true)}
-            disabled={!complement}
-            title={!complement ? 'Preencha os dados obrigatórios primeiro' : 'Pré-visualizar texto'}
+            disabled={!complement || !!company.inativo}
+            title={!complement ? 'Preencha os dados obrigatórios primeiro' : !!company.inativo ? 'Empresa inativa' : 'Pré-visualizar texto'}
           >
             <Eye size={15} /> Pré-visualizar
           </button>
@@ -203,7 +254,8 @@ export default function CompanyDetail() {
           <button
             className="btn-primary"
             onClick={handleGenerateClick}
-            disabled={!complement || generating}
+            disabled={!complement || generating || !!company.inativo}
+            title={!!company.inativo ? 'Empresa inativa — reative para gerar DOCX' : undefined}
           >
             {generating
               ? <><Spinner size={15} className="animate-spin" /> Gerando…</>
