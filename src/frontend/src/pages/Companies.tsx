@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   MagnifyingGlass, ArrowRight, ArrowLeft, CheckCircle, Clock,
-  Buildings, X, User, UsersThree, Prohibit,
+  Buildings, X, UsersThree, Prohibit, ArrowCounterClockwise,
 } from '@phosphor-icons/react';
 import {
   listCompanies,
   updateResponsavel as apiUpdateResponsavel,
   bulkUpdateResponsavelApi,
   listResponsaveis,
+  updateCompanyStatus,
 } from '../services/api';
 import { maskCNPJ } from '../utils/validators';
 import { useToast } from '../context/ToastContext';
@@ -68,10 +69,6 @@ export default function Companies() {
   // ── Local state ───────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState(search);
   const [pageInput,   setPageInput]   = useState(String(page));
-  const [currentUser, setCurrentUser] = useState(
-    () => localStorage.getItem('aditiva_current_user') ?? '',
-  );
-
   // Mass assignment
   const [assignOpen,     setAssignOpen]     = useState(false);
   const [assignUser,     setAssignUser]     = useState('');
@@ -81,12 +78,6 @@ export default function Companies() {
 
   // Sync pageInput when URL page changes (Anterior / Próxima)
   useEffect(() => { setPageInput(String(page)); }, [page]);
-
-  // Persist current user to localStorage
-  useEffect(() => {
-    if (currentUser) localStorage.setItem('aditiva_current_user', currentUser);
-    else             localStorage.removeItem('aditiva_current_user');
-  }, [currentUser]);
 
   // ── Responsáveis disponíveis (banco) ─────────────────────────
   const { data: responsaveisData } = useQuery({
@@ -116,6 +107,17 @@ export default function Companies() {
       apiUpdateResponsavel(id, responsavel),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
     onError:   (e: Error) => toast(e.message, 'error'),
+  });
+
+  const statusMut = useMutation({
+    mutationFn: ({ id, inativo }: { id: string; inativo: boolean }) =>
+      updateCompanyStatus(id, inativo),
+    onSuccess: (_, { inativo }) => {
+      qc.invalidateQueries({ queryKey: ['companies'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+      toast(inativo ? 'Empresa inativada.' : 'Empresa reativada.', 'success');
+    },
+    onError: (e: Error) => toast(e.message, 'error'),
   });
 
   // ── URL helpers ───────────────────────────────────────────────
@@ -217,19 +219,6 @@ export default function Companies() {
           </p>
         </div>
 
-        {/* Usuário atual */}
-        <div className="flex items-center gap-2 shrink-0">
-          <User size={15} className="text-gray-400 dark:text-zinc-500" />
-          <select
-            value={currentUser}
-            onChange={(e) => setCurrentUser(e.target.value)}
-            className="input py-1.5 text-sm min-w-[160px]"
-            aria-label="Usuário atual"
-          >
-            <option value="">Selecione usuário…</option>
-            {RESPONSAVEIS.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
       </div>
 
       {/* ── Filtros — linha 1: busca + status ── */}
@@ -423,8 +412,36 @@ export default function Companies() {
                   <td className="px-5 py-3.5 text-gray-500 dark:text-zinc-400 tabular-nums">
                     {maskCNPJ(company.cnpj)}
                   </td>
-                  <td className="px-5 py-3.5">
-                    <StatusBadge company={company} />
+                  <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge company={company} />
+                      {company.inativo ? (
+                        <button
+                          className="text-xs text-gray-400 hover:text-green-600
+                                     dark:text-zinc-500 dark:hover:text-green-400
+                                     transition-colors flex items-center gap-1"
+                          onClick={() => statusMut.mutate({ id: company.id, inativo: false })}
+                          disabled={statusMut.isPending}
+                          title="Reativar empresa"
+                        >
+                          <ArrowCounterClockwise size={13} />
+                          Reativar
+                        </button>
+                      ) : (
+                        <button
+                          className="text-xs text-gray-300 hover:text-red-500
+                                     dark:text-zinc-600 dark:hover:text-red-400
+                                     transition-colors flex items-center gap-1
+                                     opacity-0 group-hover:opacity-100"
+                          onClick={() => statusMut.mutate({ id: company.id, inativo: true })}
+                          disabled={statusMut.isPending}
+                          title="Inativar empresa"
+                        >
+                          <Prohibit size={13} />
+                          Inativar
+                        </button>
+                      )}
+                    </div>
                   </td>
                   {/* Clique na célula de responsável não navega para detalhe */}
                   <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>

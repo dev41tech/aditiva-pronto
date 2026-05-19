@@ -118,7 +118,7 @@
   .table-row {
     @apply border-b border-gray-50 dark:border-zinc-800
            hover:bg-gray-50 dark:hover:bg-zinc-800/60
-           cursor-pointer transition-colors;
+           cursor-pointer transition-colors group;
   }
   .table-head {
     @apply px-5 py-3 font-medium text-xs uppercase tracking-wide
