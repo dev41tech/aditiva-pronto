@@ -13,7 +13,7 @@ import { isValidCNPJ, onlyDigits } from '../utils/validators';
 import { formatCNPJ } from '../utils/formatters';
 import { logger } from '../utils/logger';
 
-const CNPJ_HEADERS   = ['CNPJ', 'cnpj', 'Cnpj', 'C.N.P.J', 'CPF/CNPJ'];
+const CNPJ_HEADERS   = ['CNPJ', 'cnpj', 'Cnpj', 'C.N.P.J', 'CPF/CNPJ', 'CNPJ/CPF', 'CNPJ/CPF/CEI/CAEPF', 'CNPJ / CPF / CEI / CAEPF', 'CNPJ/CPF/CEI'];
 const RAZAO_HEADERS  = ['RAZÃO SOCIAL', 'RAZAO SOCIAL', 'Razão Social', 'Razao Social', 'NOME', 'Nome'];
 
 interface ImportResult {
